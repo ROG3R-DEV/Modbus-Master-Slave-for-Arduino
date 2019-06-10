@@ -61,7 +61,7 @@ public:
     }
 
   /** Clear the "dirty" flag. */
-  bool set_clean()
+  void set_clean()
     {
       dirty = false;
     }
@@ -166,7 +166,7 @@ public:
     }
 
   /** Clear the "dirty" flag. */
-  bool set_clean()
+  void set_clean()
     {
       dirty = false;
     }
@@ -215,7 +215,7 @@ public:
   Mapping(uint16_t num_coil_blocks = 0, uint16_t num_register_blocks = 0):
       coil_block( (CoilBlock**)calloc(num_coil_blocks, sizeof(CoilBlock*)) ),
       num_coil_blocks(0),
-      register_block( (RegisterBlock**)calloc(num_coil_blocks, sizeof(RegisterBlock*)) ),
+      register_block( (RegisterBlock**)calloc(num_register_blocks, sizeof(RegisterBlock*)) ),
       num_register_blocks(0)
     {}
 
@@ -256,7 +256,7 @@ public:
     }
 
   /** Clear the "dirty" flag. */
-  bool set_clean()
+  void set_clean()
     {
       for(size_t c=0; c<num_coil_blocks; ++c)
           coil_block[c]->set_clean();
@@ -265,12 +265,12 @@ public:
       dirty = false;
     }
 
-  bool have_coil_addresses(uint16_t first_addr, uint16_t num_coils) const
+  bool have_coil_addresses(uint16_t first_addr, uint16_t num_coils =1) const
     {
       return have_addresses(coil_block, num_coil_blocks, first_addr, num_coils);
     }
 
-  bool have_register_addresses(uint16_t first_addr, uint16_t num_coils) const
+  bool have_register_addresses(uint16_t first_addr, uint16_t num_coils =1) const
     {
       return have_addresses(
           register_block, num_register_blocks, first_addr, num_coils);
