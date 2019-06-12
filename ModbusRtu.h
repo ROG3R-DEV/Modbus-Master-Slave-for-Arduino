@@ -1079,7 +1079,7 @@ void Modbus::get_FC1( const uint8_t* buf, uint8_t count )
         }
         else
         {
-            au16regs[i/2]= word(highByte(au16regs[i/2]), buf[i+u8byte]); 
+            au16regs[i/2]= word(0, au8Buffer[i+u8byte]); 
         }
         
      }
@@ -1131,6 +1131,9 @@ int8_t Modbus::process_FC1( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, ui
 
     // read each coil from the register map and put its value inside the outcoming message
     u8bitsno = 0;
+
+    // Clear all data bits in outgoing message.
+    memset( au8Buffer+u8BufferSize, 0, MAX_BUFFER-u8BufferSize );
 
     for (u16currentCoil = 0; u16currentCoil < u16Coilno; u16currentCoil++)
     {
