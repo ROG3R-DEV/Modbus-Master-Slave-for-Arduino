@@ -169,13 +169,12 @@ private:
     uint16_t u16InCnt, u16OutCnt, u16errCnt;
     uint16_t u16timeOut;
     uint32_t u32time, u32timeOut, u32overTime;
-    uint8_t u8regsize;
 
     int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
     uint16_t calcCRC( const uint8_t* data, uint8_t len );
     uint8_t validateAnswer( const uint8_t* buf, uint8_t count );
-    uint8_t validateRequest( const uint8_t* buf, uint8_t count );
+    uint8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count );
     uint8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     uint8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     void get_FC1( const uint8_t* buf, uint8_t count );
@@ -735,10 +734,8 @@ int8_t Modbus::poll()
  */
 int8_t Modbus::poll( uint16_t *regs, uint8_t u8size )
 {
-
     au16regs = regs;
-    u8regsize = u8size;
-	uint8_t u8current;
+    uint8_t u8current;
 
 
     // check if there is any incoming frame
@@ -769,7 +766,7 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size )
     if (au8Buffer[ ID ] != u8id) return 0;
 
     // validate message: CRC, FCT, address and size
-    uint8_t u8exception = validateRequest( au8Buffer, u8BufferSize );
+    uint8_t u8exception = validateRequest( u8size, au8Buffer, u8BufferSize );
     if (u8exception > 0)
     {
         if (u8exception != NO_REPLY)
@@ -947,7 +944,10 @@ uint16_t Modbus::calcCRC(const uint8_t* data, uint8_t len)
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-uint8_t Modbus::validateRequest( const uint8_t* buf, uint8_t count )
+uint8_t Modbus::validateRequest(
+    uint8_t        regsize,
+    const uint8_t* buf,
+    uint8_t        count)
 {
     // check message crc vs calculated crc
     uint16_t u16MsgCRC =
@@ -984,17 +984,17 @@ uint8_t Modbus::validateRequest( const uint8_t* buf, uint8_t count )
       {
         uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
         uint16_t u16Coilno    = word( buf[ NB_HI ],  buf[ NB_LO ] );
-        return validateCoilAddress(u8regsize, u16StartCoil, u16Coilno);
+        return validateCoilAddress(regsize, u16StartCoil, u16Coilno);
       }
     case MB_FC_WRITE_COIL:
       {
         uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-        return validateCoilAddress(u8regsize, u16StartCoil, 1);
+        return validateCoilAddress(regsize, u16StartCoil, 1);
       }
     case MB_FC_WRITE_REGISTER :
       {
         uint16_t u16StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-        return validateRegAddress(u8regsize, u16StartAdd, 1);
+        return validateRegAddress(regsize, u16StartAdd, 1);
       }
     case MB_FC_READ_REGISTERS :
     case MB_FC_READ_INPUT_REGISTER :
@@ -1002,7 +1002,7 @@ uint8_t Modbus::validateRequest( const uint8_t* buf, uint8_t count )
       {
         uint16_t u16StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
         uint16_t u16regsno   = word( buf[ NB_HI ],  buf[ NB_LO ] );
-        return validateRegAddress(u8regsize, u16StartAdd, u16regsno);
+        return validateRegAddress(regsize, u16StartAdd, u16regsno);
       }
     }
     return 0; // OK, no exception code thrown
