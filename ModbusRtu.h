@@ -176,6 +176,8 @@ private:
     uint16_t calcCRC( const uint8_t* data, uint8_t len );
     uint8_t validateAnswer( const uint8_t* buf, uint8_t count );
     uint8_t validateRequest( const uint8_t* buf, uint8_t count );
+    uint8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
+    uint8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     void get_FC1( const uint8_t* buf, uint8_t count );
     void get_FC3( const uint8_t* buf, uint8_t count );
     int8_t process_FC1( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
@@ -974,39 +976,84 @@ uint8_t Modbus::validateRequest( const uint8_t* buf, uint8_t count )
     }
 
     // check start address & nb range
-    uint16_t u16regs = 0;
-    uint8_t u8regs;
     switch ( buf[ FUNC ] )
     {
     case MB_FC_READ_COILS:
     case MB_FC_READ_DISCRETE_INPUT:
     case MB_FC_WRITE_MULTIPLE_COILS:
-        u16regs = word( buf[ ADD_HI ], buf[ ADD_LO ]) / 16;
-        u16regs += word( buf[ NB_HI ], buf[ NB_LO ]) /16;
-        u8regs = (uint8_t) u16regs;
-        if (u8regs > u8regsize) return EXC_ADDR_RANGE;
-        break;
+      {
+        uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+        uint16_t u16Coilno    = word( buf[ NB_HI ],  buf[ NB_LO ] );
+        return validateCoilAddress(u8regsize, u16StartCoil, u16Coilno);
+      }
     case MB_FC_WRITE_COIL:
-        u16regs = word( buf[ ADD_HI ], buf[ ADD_LO ]) / 16;
-        u8regs = (uint8_t) u16regs;
-        if (u8regs > u8regsize) return EXC_ADDR_RANGE;
-        break;
+      {
+        uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+        return validateCoilAddress(u8regsize, u16StartCoil, 1);
+      }
     case MB_FC_WRITE_REGISTER :
-        u16regs = word( buf[ ADD_HI ], buf[ ADD_LO ]);
-        u8regs = (uint8_t) u16regs;
-        if (u8regs > u8regsize) return EXC_ADDR_RANGE;
-        break;
+      {
+        uint16_t u16StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+        return validateRegAddress(u8regsize, u16StartAdd, 1);
+      }
     case MB_FC_READ_REGISTERS :
     case MB_FC_READ_INPUT_REGISTER :
     case MB_FC_WRITE_MULTIPLE_REGISTERS :
-        u16regs = word( buf[ ADD_HI ], buf[ ADD_LO ]);
-        u16regs += word( buf[ NB_HI ], buf[ NB_LO ]);
-        u8regs = (uint8_t) u16regs;
-        if (u8regs > u8regsize) return EXC_ADDR_RANGE;
-        break;
+      {
+        uint16_t u16StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+        uint16_t u16regsno   = word( buf[ NB_HI ],  buf[ NB_LO ] );
+        return validateRegAddress(u8regsize, u16StartAdd, u16regsno);
+      }
     }
     return 0; // OK, no exception code thrown
 }
+
+
+/**
+ * @brief
+ * Determine the validity of a range of coil (or discrete input) addresses.
+ *
+ * @param  regsize   number of 16-bit words in the data array.
+ *                   Valid addresses are in range [0,regsize*16).
+ * @param  startaddr first coil address in range.
+ * @param  quantity  number of coil address after startaddr.
+ * @return 0 if OK, EXCEPTION if anything fails
+ * @ingroup buffer
+ */
+inline uint8_t Modbus::validateCoilAddress(
+    uint8_t  regsize,
+    uint16_t startaddr,
+    uint16_t quantity ) const
+{
+  uint16_t firstword = startaddr/16;
+  uint16_t lastword  = (startaddr+quantity-1)/16;
+  return validateRegAddress(regsize, firstword, 1+lastword-firstword);
+}
+
+
+/**
+ * @brief
+ * Determine the validity of a range of register addresses.
+ *
+ * @param  regsize   number of 16-bit words in the data array.
+ *                   Valid addresses are in range [0,regsize).
+ * @param  startaddr first register address in range.
+ * @param  quantity  number of register address after startaddr.
+ * @return 0 if OK, EXCEPTION if anything fails
+ * @ingroup buffer
+ */
+inline uint8_t Modbus::validateRegAddress(
+    uint8_t  regsize,
+    uint16_t startaddr,
+    uint16_t quantity ) const
+{
+  uint16_t endaddr = startaddr + quantity;
+  if(endaddr > regsize)
+      return EXC_ADDR_RANGE;
+  else
+      return 0;
+}
+
 
 /**
  * @brief
