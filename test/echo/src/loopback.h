@@ -98,5 +98,9 @@ public:
       else
           return -1;
     }
+
+private:
+  /** Not copyable. */
+  Loopback(const Loopback&);
 };
 
