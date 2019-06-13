@@ -142,8 +142,13 @@ const unsigned char fctsupported[] =
     MB_FC_WRITE_MULTIPLE_REGISTERS
 };
 
+#if !defined(T35)
 #define T35  5
+#endif
+
+#if !defined(MAX_BUFFER)
 #define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
+#endif
 
 /**
  * @class Modbus
@@ -617,6 +622,9 @@ int8_t Modbus::query( modbus_t telegram )
             u8BufferSize++;
         }
         break;
+
+    default:
+        return -4; // Unrecognised or unsupported function code.
     }
 
     sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
@@ -1079,7 +1087,7 @@ void Modbus::get_FC1( const uint8_t* buf, uint8_t count )
         }
         else
         {
-            au16regs[i/2]= word(0, au8Buffer[i+u8byte]); 
+            au16regs[i/2]= word(0, buf[i+u8byte]); 
         }
         
      }
@@ -1133,7 +1141,7 @@ int8_t Modbus::process_FC1( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, ui
     u8bitsno = 0;
 
     // Clear all data bits in outgoing message.
-    memset( au8Buffer+u8BufferSize, 0, MAX_BUFFER-u8BufferSize );
+    memset( buf+count, 0, MAX_BUFFER-count );
 
     for (u16currentCoil = 0; u16currentCoil < u16Coilno; u16currentCoil++)
     {
