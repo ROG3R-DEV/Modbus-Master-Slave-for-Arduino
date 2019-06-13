@@ -133,7 +133,7 @@ void poll()
       slave_stream.print_status(Serial, "slave");
 #endif
 
-  slave_poll_result = slave.poll(slave_data, sizeof(slave_data));
+  slave_poll_result = slave.poll(slave_data, slave_data_count);
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
       master_stream.print_status(Serial, "master");
       slave_stream.print_status(Serial, "slave");
@@ -214,7 +214,7 @@ void test_oob_holding_register()
   // Currently FAILS, because the slave does not check its bounds.
   uint16_t val = read_holding_register(slave_data_count);
   test_equal(
-      "test_oob_holding_register, non-existant",
+      "test_oob_holding_register, non-existent",
       slave_data_count,
       master.getErrCnt(),
       errcnt0+1
@@ -317,10 +317,10 @@ void test_coils()
   }
   test_equal("test_coils, errcnt", 0, master.getErrCnt(), errcnt0);
 
-  // Test for correct handling of a non-existant register.
+  // Test for correct handling of a non-existent register.
   // Currently FAILS, because the slave does not check its bounds.
   read_coil(slave_data_count*16);
-  test_equal("test_coils, non-existant",0,master.getErrCnt(),errcnt0+1);
+  test_equal("test_coils, non-existent",0,master.getErrCnt(),errcnt0+1);
 }
 
 
@@ -413,7 +413,7 @@ void loop()
 
   test_multiple_registers();
 
-  test_equal("master error count", 0, master.getErrCnt(), 0);
+  test_equal("master error count", 0, master.getErrCnt(), 3);
 
   Serial.println(F("OK"));
   delay(10000);
