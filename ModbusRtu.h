@@ -180,7 +180,7 @@ protected:
 
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
     int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
-    uint16_t calcCRC( const uint8_t* data, uint8_t len );
+    uint16_t calcCRC( const uint8_t* data, uint8_t len ) const;
 
 public:
     void start();
@@ -241,7 +241,7 @@ private:
     uint8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count );
     uint8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     uint8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
-    int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ); // build exception message
+    int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) const;
     int8_t process_FC1( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC3( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC5( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
@@ -1109,7 +1109,7 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
  * @return uint16_t calculated CRC value for the message
  * @ingroup buffer
  */
-uint16_t Base::calcCRC(const uint8_t* data, uint8_t len)
+uint16_t Base::calcCRC(const uint8_t* data, uint8_t len) const
 {
     unsigned int temp, temp2, flag;
     temp = 0xFFFF;
@@ -1354,7 +1354,7 @@ inline uint8_t Slave::validateRegAddress(
  *
  * @ingroup buffer
  */
-int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf, uint8_t size )
+int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) const
 {
     uint8_t u8func = buf[ FUNC ];  // get the original FUNC code
 
