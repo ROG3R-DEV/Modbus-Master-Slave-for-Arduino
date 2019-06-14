@@ -178,8 +178,8 @@ protected:
 protected:
     Base(Stream& port, uint8_t u8txenpin =0);
 
-    int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
+    int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
     uint16_t calcCRC( const uint8_t* data, uint8_t len );
 
 public:
@@ -218,9 +218,10 @@ public:
 
     void setTimeOut( uint16_t u16timeOut); //!<write communication watch-dog timer
     bool getTimeOutState(); //!<get communication watch-dog timer state
+    uint8_t getState();
+
     int8_t query( modbus_t telegram ); //!<only for master
     int8_t poll(); //!<cyclic poll for master
-    uint8_t getState();
 };
 
 
@@ -240,20 +241,21 @@ private:
     uint8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count );
     uint8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     uint8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
+    int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ); // build exception message
     int8_t process_FC1( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC3( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC5( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC6( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC15( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC16( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
-    int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ); // build exception message
 
 public:
     Slave(uint8_t u8id, Stream& port, uint8_t u8txenpin =0);
 
-    int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
-    uint8_t getID(); //!<get slave ID between 1 and 247
     void setID( uint8_t u8id ); //!<write new ID for the slave
+    uint8_t getID(); //!<get slave ID between 1 and 247
+
+    int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
 };
 
 
@@ -326,8 +328,108 @@ public:
 };
 
 
-/* _____PUBLIC FUNCTIONS_____________________________________________________ */
+/* _____PUBLIC FUNCTIONS_____BASE____________________________________________ */
 
+/**
+ * @brief
+ * Start-up class object.
+ *
+ * Call this AFTER calling begin() on the serial port, typically within setup().
+ *
+ * (If you call this function, then you should NOT call any of
+ * Modbus's own begin() functions.)
+ *
+ * @ingroup setup
+ */
+void Base::start()
+{
+    if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
+    {
+        // return RS485 transceiver to transmit mode
+        pinMode(u8txenpin, OUTPUT);
+        digitalWrite(u8txenpin, LOW);
+    }
+
+    while(port->read() >= 0);
+    u8lastRec = 0;
+    u16InCnt = u16OutCnt = u16errCnt = 0;
+}
+
+
+/**
+ * @brief
+ * Get input messages counter value
+ * This can be useful to diagnose communication
+ *
+ * @return input messages counter
+ * @ingroup buffer
+ */
+uint16_t Base::getInCnt()
+{
+    return u16InCnt;
+}
+
+
+/**
+ * @brief
+ * Get transmitted messages counter value
+ * This can be useful to diagnose communication
+ *
+ * @return transmitted messages counter
+ * @ingroup buffer
+ */
+uint16_t Base::getOutCnt()
+{
+    return u16OutCnt;
+}
+
+
+/**
+ * @brief
+ * Get errors counter value
+ * This can be useful to diagnose communication
+ *
+ * @return errors counter
+ * @ingroup buffer
+ */
+uint16_t Base::getErrCnt()
+{
+    return u16errCnt;
+}
+
+
+/**
+ * Get the last error in the protocol processor
+ *
+ * @returnreturn   NO_REPLY = 255      Time-out
+ * @return   EXC_FUNC_CODE = 1   Function code not available
+ * @return   EXC_ADDR_RANGE = 2  Address beyond available space for Modbus registers
+ * @return   EXC_REGS_QUANT = 3  Coils or registers number beyond the available space
+ * @ingroup buffer
+ */
+uint8_t Base::getLastError()
+{
+    return u8lastError;
+}
+
+
+/**
+ * @brief
+ * Method to write the overtime count for txend pin.
+ * It waits until count reaches 0 after the transfer is done.
+ * With this, you can extend the time between txempty and
+ * the falling edge if needed.
+ *
+ * @param 	uint32_t	overtime count for txend pin
+ * @ingroup setup
+ */
+void Base::setTxendPinOverTime( uint32_t u32overTime )
+{
+    this->u32overTime = u32overTime;
+}
+
+
+/* _____PUBLIC FUNCTIONS_____MASTER__________________________________________ */
 
 /**
  * @brief
@@ -360,245 +462,6 @@ Master::Master(Stream& port_, uint8_t u8txenpin_):
 
 /**
  * @brief
- * Constructor for a Slave.
- *
- * For hardware serial through USB/RS232C/RS485 set port to Serial, Serial1,
- * Serial2, or Serial3. (Numbered hardware serial ports are only available on
- * some boards.)
- *
- * For software serial through RS232C/RS485 set port to a SoftwareSerial object
- * that you have already constructed.
- *
- * Only RS485 needs a pin for flow control. Pins 0 and 1 cannot be used.
- *
- * First call begin() on your serial port, and then start up ModbusRtu by
- * calling start(). You can choose the line speed and other port parameters
- * by passing the appropriate values to the port's begin() function.
- *
- * @param u8id   node address, range: 1..247
- * @param port   serial port used
- * @param u8txenpin pin for txen RS-485 (=0 means USB/RS232C mode)
- * @ingroup setup
- */
-Slave::Slave(uint8_t u8id_, Stream& port_, uint8_t u8txenpin_):
-    Base(port_, u8txenpin_),
-    u8id(u8id_)
-{}
-
-
-/**
- * @brief
- * Constructor for a Master/Slave.
- *
- * For hardware serial through USB/RS232C/RS485 set port to Serial, Serial1,
- * Serial2, or Serial3. (Numbered hardware serial ports are only available on
- * some boards.)
- *
- * For software serial through RS232C/RS485 set port to a SoftwareSerial object
- * that you have already constructed.
- *
- * Only RS485 needs a pin for flow control. Pins 0 and 1 cannot be used.
- *
- * First call begin() on your serial port, and then start up ModbusRtu by
- * calling start(). You can choose the line speed and other port parameters
- * by passing the appropriate values to the port's begin() function.
- *
- * @param u8id   node address 0=master, 1..247=slave
- * @param port   serial port used
- * @param u8txenpin pin for txen RS-485 (=0 means USB/RS232C mode)
- * @ingroup setup
- */
-Modbus::Modbus(uint8_t u8id, Stream& port, uint8_t u8txenpin):
-    is_master( u8id==0 )
-{
-  if (is_master)
-      impl = new Master(port, u8txenpin);
-  else
-      impl = new Slave(u8id, port, u8txenpin);
-}
-
-
-/**
- * @brief
- * DEPRECATED constructor for a Master/Slave.
- *
- * THIS CONSTRUCTOR IS ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
- * USE Modbus(uint8_t, T_Stream&, uint8_t) INSTEAD.
- *
- * @param u8id   node address 0=master, 1..247=slave
- * @param u8serno  serial port used 0..3 (ignored for software serial)
- * @param u8txenpin pin for txen RS-485 (=0 means USB/RS232C mode)
- * @ingroup setup
- * @overload Modbus::Modbus(uint8_t u8id, T_Stream& port, uint8_t u8txenpin)
- */
-Modbus::Modbus(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin):
-    is_master( u8id==0 )
-{
-    Stream* port;
-
-    switch( u8serno )
-    {
-#if defined(UBRR1H)
-    case 1:
-        port = &Serial1;
-        break;
-#endif
-
-#if defined(UBRR2H)
-    case 2:
-        port = &Serial2;
-        break;
-#endif
-
-#if defined(UBRR3H)
-    case 3:
-        port = &Serial3;
-        break;
-#endif
-    case 0:
-    default:
-        port = &Serial;
-        break;
-    }
-
-  if (is_master)
-      impl = new Master(*port, u8txenpin);
-  else
-      impl = new Slave(u8id, *port, u8txenpin);
-}
-
-
-/**
- * @brief
- * Start-up class object.
- *
- * Call this AFTER calling begin() on the serial port, typically within setup().
- *
- * (If you call this function, then you should NOT call any of
- * Modbus's own begin() functions.)
- *
- * @ingroup setup
- */
-void Base::start()
-{
-    if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
-    {
-        // return RS485 transceiver to transmit mode
-        pinMode(u8txenpin, OUTPUT);
-        digitalWrite(u8txenpin, LOW);
-    }
-
-    while(port->read() >= 0);
-    u8lastRec = 0;
-    u16InCnt = u16OutCnt = u16errCnt = 0;
-}
-
-
-/**
- * @brief
- * DEPRECATED Install a serial port, begin() it, and start Modbus.
- *
- * ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
- * USE Serial.begin(<baud rate>); FOLLOWED BY Modbus.start() INSTEAD.
- *
- * @param install_port pointer to SoftwareSerial or HardwareSerial class object
- * @param u32speed     baud rate, in standard increments (300..115200)
- * @ingroup setup
- */
-template<typename T_Stream>
-void Modbus::begin(T_Stream* install_port, long u32speed)
-{
-    impl->port = install_port;
-    install_port->begin(u32speed);
-    start();
-}
-
-
-/**
- * @brief
- * DEPRECATED. Install a serial port, begin() it, and start Modbus.
- *
- * ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
- * USE Serial.begin(<baud rate>); FOLLOWED BY Modbus.start() INSTEAD.
- *
- * @param install_port  pointer to SoftwareSerial or HardwareSerial class object
- * @param u32speed      baud rate, in standard increments (300..115200)
- * @param u8txenpin     pin for txen RS-485 (=0 means USB/RS232C mode)
- * @ingroup setup
- */
-template<typename T_Stream>
-void Modbus::begin(T_Stream* install_port, long u32speed, uint8_t u8txenpin)
-{
-    impl->u8txenpin = u8txenpin;
-    impl->port = install_port;
-    install_port->begin(u32speed);
-    start();
-}
-
-
-/**
- * @brief
- * DEPRECATED. begin() hardware serial port and start Modbus.
- *
- * ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
- * USE Serial.begin(<baud rate>); FOLLOWED BY Modbus.start() INSTEAD.
- *
- * @see http://arduino.cc/en/Serial/Begin#.Uy4CJ6aKlHY
- * @param speed   baud rate, in standard increments (300..115200). Default=19200
- * @ingroup setup
- */
-void Modbus::begin(long u32speed)
-{
-    // !!Can ONLY do this if port ACTUALLY IS a HardwareSerial object!!
-    static_cast<HardwareSerial*>(impl->port)->begin(u32speed);
-    start();
-}
-
-
-/**
- * @brief
- * Method to write a new slave ID address
- *
- * @param 	u8id	new slave address between 1 and 247
- * @ingroup setup
- */
-void Slave::setID( uint8_t u8id)
-{
-    if (( u8id != 0) && (u8id <= 247))
-    {
-        this->u8id = u8id;
-    }
-}
-
-/**
- * @brief
- * Method to write the overtime count for txend pin.
- * It waits until count reaches 0 after the transfer is done.
- * With this, you can extend the time between txempty and
- * the falling edge if needed.
- *
- * @param 	uint32_t	overtime count for txend pin
- * @ingroup setup
- */
-void Base::setTxendPinOverTime( uint32_t u32overTime )
-{
-    this->u32overTime = u32overTime;
-}
-
-/**
- * @brief
- * Method to read current slave ID address
- *
- * @return u8id	current slave address between 1 and 247
- * @ingroup setup
- */
-uint8_t Slave::getID()
-{
-    return this->u8id;
-}
-
-/**
- * @brief
  * Initialize time-out parameter
  *
  * Call once class has been instantiated, typically within setup().
@@ -613,6 +476,7 @@ void Master::setTimeOut( uint16_t u16timeOut)
     this->u16timeOut = u16timeOut;
 }
 
+
 /**
  * @brief
  * Return communication Watchdog state.
@@ -626,44 +490,6 @@ bool Master::getTimeOutState()
     return ((unsigned long)(millis() -u32timeOut) > (unsigned long)u16timeOut);
 }
 
-/**
- * @brief
- * Get input messages counter value
- * This can be useful to diagnose communication
- *
- * @return input messages counter
- * @ingroup buffer
- */
-uint16_t Base::getInCnt()
-{
-    return u16InCnt;
-}
-
-/**
- * @brief
- * Get transmitted messages counter value
- * This can be useful to diagnose communication
- *
- * @return transmitted messages counter
- * @ingroup buffer
- */
-uint16_t Base::getOutCnt()
-{
-    return u16OutCnt;
-}
-
-/**
- * @brief
- * Get errors counter value
- * This can be useful to diagnose communication
- *
- * @return errors counter
- * @ingroup buffer
- */
-uint16_t Base::getErrCnt()
-{
-    return u16errCnt;
-}
 
 /**
  * Get modbus master state
@@ -676,19 +502,6 @@ uint8_t Master::getState()
     return u8state;
 }
 
-/**
- * Get the last error in the protocol processor
- *
- * @returnreturn   NO_REPLY = 255      Time-out
- * @return   EXC_FUNC_CODE = 1   Function code not available
- * @return   EXC_ADDR_RANGE = 2  Address beyond available space for Modbus registers
- * @return   EXC_REGS_QUANT = 3  Coils or registers number beyond the available space
- * @ingroup buffer
- */
-uint8_t Base::getLastError()
-{
-    return u8lastError;
-}
 
 /**
  * @brief
@@ -794,6 +607,7 @@ int8_t Master::query( modbus_t telegram )
     return 0;
 }
 
+
 /**
  * @brief *** Only for Modbus Master ***
  * This method checks if there is any incoming answer if pending.
@@ -878,6 +692,66 @@ int8_t Master::poll()
     u8state = COM_IDLE;
     return u8BufferSize;
 }
+
+
+/* _____PUBLIC FUNCTIONS_____SLAVE___________________________________________ */
+
+/**
+ * @brief
+ * Constructor for a Slave.
+ *
+ * For hardware serial through USB/RS232C/RS485 set port to Serial, Serial1,
+ * Serial2, or Serial3. (Numbered hardware serial ports are only available on
+ * some boards.)
+ *
+ * For software serial through RS232C/RS485 set port to a SoftwareSerial object
+ * that you have already constructed.
+ *
+ * Only RS485 needs a pin for flow control. Pins 0 and 1 cannot be used.
+ *
+ * First call begin() on your serial port, and then start up ModbusRtu by
+ * calling start(). You can choose the line speed and other port parameters
+ * by passing the appropriate values to the port's begin() function.
+ *
+ * @param u8id   node address, range: 1..247
+ * @param port   serial port used
+ * @param u8txenpin pin for txen RS-485 (=0 means USB/RS232C mode)
+ * @ingroup setup
+ */
+Slave::Slave(uint8_t u8id_, Stream& port_, uint8_t u8txenpin_):
+    Base(port_, u8txenpin_),
+    u8id(u8id_)
+{}
+
+
+/**
+ * @brief
+ * Method to write a new slave ID address
+ *
+ * @param 	u8id	new slave address between 1 and 247
+ * @ingroup setup
+ */
+void Slave::setID( uint8_t u8id)
+{
+    if (( u8id != 0) && (u8id <= 247))
+    {
+        this->u8id = u8id;
+    }
+}
+
+
+/**
+ * @brief
+ * Method to read current slave ID address
+ *
+ * @return u8id	current slave address between 1 and 247
+ * @ingroup setup
+ */
+uint8_t Slave::getID()
+{
+    return this->u8id;
+}
+
 
 /**
  * @brief
@@ -966,8 +840,153 @@ int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
     return i8bytes_read;
 }
 
-/* _____PRIVATE FUNCTIONS_____________________________________________________ */
 
+/* _____PUBLIC FUNCTIONS_____MODBUS__________________________________________ */
+
+/**
+ * @brief
+ * Constructor for a Master/Slave.
+ *
+ * For hardware serial through USB/RS232C/RS485 set port to Serial, Serial1,
+ * Serial2, or Serial3. (Numbered hardware serial ports are only available on
+ * some boards.)
+ *
+ * For software serial through RS232C/RS485 set port to a SoftwareSerial object
+ * that you have already constructed.
+ *
+ * Only RS485 needs a pin for flow control. Pins 0 and 1 cannot be used.
+ *
+ * First call begin() on your serial port, and then start up ModbusRtu by
+ * calling start(). You can choose the line speed and other port parameters
+ * by passing the appropriate values to the port's begin() function.
+ *
+ * @param u8id   node address 0=master, 1..247=slave
+ * @param port   serial port used
+ * @param u8txenpin pin for txen RS-485 (=0 means USB/RS232C mode)
+ * @ingroup setup
+ */
+Modbus::Modbus(uint8_t u8id, Stream& port, uint8_t u8txenpin):
+    is_master( u8id==0 )
+{
+  if (is_master)
+      impl = new Master(port, u8txenpin);
+  else
+      impl = new Slave(u8id, port, u8txenpin);
+}
+
+
+/**
+ * @brief
+ * DEPRECATED constructor for a Master/Slave.
+ *
+ * THIS CONSTRUCTOR IS ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
+ * USE Modbus(uint8_t, T_Stream&, uint8_t) INSTEAD.
+ *
+ * @param u8id   node address 0=master, 1..247=slave
+ * @param u8serno  serial port used 0..3 (ignored for software serial)
+ * @param u8txenpin pin for txen RS-485 (=0 means USB/RS232C mode)
+ * @ingroup setup
+ * @overload Modbus::Modbus(uint8_t u8id, T_Stream& port, uint8_t u8txenpin)
+ */
+Modbus::Modbus(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin):
+    is_master( u8id==0 )
+{
+    Stream* port;
+
+    switch( u8serno )
+    {
+#if defined(UBRR1H)
+    case 1:
+        port = &Serial1;
+        break;
+#endif
+
+#if defined(UBRR2H)
+    case 2:
+        port = &Serial2;
+        break;
+#endif
+
+#if defined(UBRR3H)
+    case 3:
+        port = &Serial3;
+        break;
+#endif
+    case 0:
+    default:
+        port = &Serial;
+        break;
+    }
+
+  if (is_master)
+      impl = new Master(*port, u8txenpin);
+  else
+      impl = new Slave(u8id, *port, u8txenpin);
+}
+
+
+/**
+ * @brief
+ * DEPRECATED Install a serial port, begin() it, and start Modbus.
+ *
+ * ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
+ * USE Serial.begin(<baud rate>); FOLLOWED BY Modbus.start() INSTEAD.
+ *
+ * @param install_port pointer to SoftwareSerial or HardwareSerial class object
+ * @param u32speed     baud rate, in standard increments (300..115200)
+ * @ingroup setup
+ */
+template<typename T_Stream>
+void Modbus::begin(T_Stream* install_port, long u32speed)
+{
+    impl->port = install_port;
+    install_port->begin(u32speed);
+    start();
+}
+
+
+/**
+ * @brief
+ * DEPRECATED. Install a serial port, begin() it, and start Modbus.
+ *
+ * ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
+ * USE Serial.begin(<baud rate>); FOLLOWED BY Modbus.start() INSTEAD.
+ *
+ * @param install_port  pointer to SoftwareSerial or HardwareSerial class object
+ * @param u32speed      baud rate, in standard increments (300..115200)
+ * @param u8txenpin     pin for txen RS-485 (=0 means USB/RS232C mode)
+ * @ingroup setup
+ */
+template<typename T_Stream>
+void Modbus::begin(T_Stream* install_port, long u32speed, uint8_t u8txenpin)
+{
+    impl->u8txenpin = u8txenpin;
+    impl->port = install_port;
+    install_port->begin(u32speed);
+    start();
+}
+
+
+/**
+ * @brief
+ * DEPRECATED. begin() hardware serial port and start Modbus.
+ *
+ * ONLY PROVIDED FOR BACKWARDS COMPATIBILITY.
+ * USE Serial.begin(<baud rate>); FOLLOWED BY Modbus.start() INSTEAD.
+ *
+ * @see http://arduino.cc/en/Serial/Begin#.Uy4CJ6aKlHY
+ * @param speed   baud rate, in standard increments (300..115200). Default=19200
+ * @ingroup setup
+ */
+void Modbus::begin(long u32speed)
+{
+    // !!Can ONLY do this if port ACTUALLY IS a HardwareSerial object!!
+    static_cast<HardwareSerial*>(impl->port)->begin(u32speed);
+    start();
+}
+
+
+/* ____PROTECTED FUNCTIONS___BASE____________________________________________ */
 
 /**
  * @brief  Base class constructor.
@@ -1019,6 +1038,7 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
 
     return i;
 }
+
 
 /**
  * @brief
@@ -1081,6 +1101,7 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
     return count;
 }
 
+
 /**
  * @brief
  * This method calculates CRC
@@ -1111,6 +1132,103 @@ uint16_t Base::calcCRC(const uint8_t* data, uint8_t len)
     // crcLo byte is first & crcHi byte is last
     return temp;
 }
+
+
+/* ____PRIVATE FUNCTIONS_____MASTER__________________________________________ */
+
+/**
+ * @brief
+ * This method validates master incoming messages
+ *
+ * @return 0 if OK, EXCEPTION if anything fails
+ * @ingroup buffer
+ */
+uint8_t Master::validateAnswer( const uint8_t* buf, uint8_t count )
+{
+    // check message crc vs calculated crc
+    uint16_t u16MsgCRC =
+        ((buf[count - 2] << 8)
+         | buf[count - 1]); // combine the crc Low & High bytes
+    if ( calcCRC( buf, count-2 ) != u16MsgCRC )
+    {
+        u16errCnt ++;
+        return NO_REPLY;
+    }
+
+    // check exception
+    if ((buf[ FUNC ] & 0x80) != 0)
+    {
+        u16errCnt ++;
+        return ERR_EXCEPTION;
+    }
+
+    // check fct code
+    boolean isSupported = false;
+    for (uint8_t i = 0; i< sizeof( fctsupported ); i++)
+    {
+        if (fctsupported[i] == buf[FUNC])
+        {
+            isSupported = 1;
+            break;
+        }
+    }
+    if (!isSupported)
+    {
+        u16errCnt ++;
+        return EXC_FUNC_CODE;
+    }
+
+    return 0; // OK, no exception code thrown
+}
+
+
+/**
+ * This method processes functions 1 & 2 (for master)
+ * This method puts the slave answer into master data buffer
+ *
+ * @ingroup register
+ * TODO: finish its implementation
+ */
+void Master::get_FC1( const uint8_t* buf, uint8_t count )
+{
+     uint8_t u8byte = 3;
+     for (uint8_t i=0; i< buf[2]; i++) {
+        
+        if(i%2)
+        {
+            au16regs[i/2]= word(buf[i+u8byte], lowByte(au16regs[i/2]));
+        }
+        else
+        {
+            au16regs[i/2]= word(0, buf[i+u8byte]); 
+        }
+        
+     }
+}
+
+
+/**
+ * This method processes functions 3 & 4 (for master)
+ * This method puts the slave answer into master data buffer
+ *
+ * @ingroup register
+ */
+void Master::get_FC3( const uint8_t* buf, uint8_t count )
+{
+    uint8_t u8byte, i;
+    u8byte = 3;
+
+    for (i=0; i< buf[ 2 ] /2; i++)
+    {
+        au16regs[ i ] = word(
+                            buf[ u8byte ],
+                            buf[ u8byte +1 ]);
+        u8byte += 2;
+    }
+}
+
+
+/* ____PRIVATE FUNCTIONS_____SLAVE___________________________________________ */
 
 /**
  * @brief
@@ -1232,51 +1350,6 @@ inline uint8_t Slave::validateRegAddress(
 
 /**
  * @brief
- * This method validates master incoming messages
- *
- * @return 0 if OK, EXCEPTION if anything fails
- * @ingroup buffer
- */
-uint8_t Master::validateAnswer( const uint8_t* buf, uint8_t count )
-{
-    // check message crc vs calculated crc
-    uint16_t u16MsgCRC =
-        ((buf[count - 2] << 8)
-         | buf[count - 1]); // combine the crc Low & High bytes
-    if ( calcCRC( buf, count-2 ) != u16MsgCRC )
-    {
-        u16errCnt ++;
-        return NO_REPLY;
-    }
-
-    // check exception
-    if ((buf[ FUNC ] & 0x80) != 0)
-    {
-        u16errCnt ++;
-        return ERR_EXCEPTION;
-    }
-
-    // check fct code
-    boolean isSupported = false;
-    for (uint8_t i = 0; i< sizeof( fctsupported ); i++)
-    {
-        if (fctsupported[i] == buf[FUNC])
-        {
-            isSupported = 1;
-            break;
-        }
-    }
-    if (!isSupported)
-    {
-        u16errCnt ++;
-        return EXC_FUNC_CODE;
-    }
-
-    return 0; // OK, no exception code thrown
-}
-
-/**
- * @brief
  * This method builds an exception message
  *
  * @ingroup buffer
@@ -1291,49 +1364,6 @@ int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf, uint8_t size )
     return EXCEPTION_SIZE;
 }
 
-/**
- * This method processes functions 1 & 2 (for master)
- * This method puts the slave answer into master data buffer
- *
- * @ingroup register
- * TODO: finish its implementation
- */
-void Master::get_FC1( const uint8_t* buf, uint8_t count )
-{
-     uint8_t u8byte = 3;
-     for (uint8_t i=0; i< buf[2]; i++) {
-        
-        if(i%2)
-        {
-            au16regs[i/2]= word(buf[i+u8byte], lowByte(au16regs[i/2]));
-        }
-        else
-        {
-            au16regs[i/2]= word(0, buf[i+u8byte]); 
-        }
-        
-     }
-}
-
-/**
- * This method processes functions 3 & 4 (for master)
- * This method puts the slave answer into master data buffer
- *
- * @ingroup register
- */
-void Master::get_FC3( const uint8_t* buf, uint8_t count )
-{
-    uint8_t u8byte, i;
-    u8byte = 3;
-
-    for (i=0; i< buf[ 2 ] /2; i++)
-    {
-        au16regs[ i ] = word(
-                            buf[ u8byte ],
-                            buf[ u8byte +1 ]);
-        u8byte += 2;
-    }
-}
 
 /**
  * @brief
@@ -1391,6 +1421,7 @@ int8_t Slave::process_FC1( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
     return sendTxBuffer( buf, count, bufsize );
 }
 
+
 /**
  * @brief
  * This method processes functions 3 & 4
@@ -1418,6 +1449,7 @@ int8_t Slave::process_FC3( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
     }
     return sendTxBuffer( buf, count, bufsize );
 }
+
 
 /**
  * @brief
@@ -1447,6 +1479,7 @@ int8_t Slave::process_FC5( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
     return sendTxBuffer( buf, 6, bufsize );
 }
 
+
 /**
  * @brief
  * This method processes function 6
@@ -1466,6 +1499,7 @@ int8_t Slave::process_FC6( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
     // keep the same header
     return sendTxBuffer( buf, RESPONSE_SIZE, bufsize );
 }
+
 
 /**
  * @brief
@@ -1519,6 +1553,7 @@ int8_t Slave::process_FC15( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, ui
     return sendTxBuffer( buf, 6, bufsize );
 }
 
+
 /**
  * @brief
  * This method processes function 16
@@ -1553,9 +1588,6 @@ int8_t Slave::process_FC16( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, ui
 
 } // end namespace modbus
 
-
 #if !defined(USING_MODBUS_NAMESPACE) || USING_MODBUS_NAMESPACE!=0
 using namespace modbus;
 #endif
-
-
