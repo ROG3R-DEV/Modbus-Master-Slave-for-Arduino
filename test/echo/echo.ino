@@ -6,6 +6,9 @@
  * Test failures are reported to Serial, labelled "FAIL".
  */
 
+// Cut down on inter-frame delays - not needed in loopback.
+#define T35 1
+
 #include <ModbusRtu.h>
 #include "src/loopback.h"
 
