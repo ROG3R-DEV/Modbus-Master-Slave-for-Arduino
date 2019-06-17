@@ -217,7 +217,7 @@ public:
     Master(Stream& port, uint8_t u8txenpin =0);
 
     void setTimeOut( uint16_t u16timeOut); //!<write communication watch-dog timer
-    bool getTimeOutState(); //!<get communication watch-dog timer state
+    bool timeOutExpired(); //!<get communication watch-dog timer state
     uint8_t getState();
 
     int8_t query( modbus_t telegram ); //!<only for master
@@ -282,7 +282,7 @@ public:
     void setTimeOut( uint16_t u16timeOut) //!<write communication watch-dog tim
         { CHECK_MASTER(); static_cast<Master*>(impl)->setTimeOut(u16timeOut); }
     bool getTimeOutState() //!<get communication watch-dog timer state
-        { CHECK_MASTER(false); return static_cast<Master*>(impl)->getTimeOutState(); }
+        { CHECK_MASTER(false); return static_cast<Master*>(impl)->timeOutExpired(); }
     int8_t query( modbus_t telegram ) //!<only for master
         { CHECK_MASTER(-2); return static_cast<Master*>(impl)->query(telegram); }
     int8_t poll() //!<cyclic poll for master
@@ -481,12 +481,12 @@ void Master::setTimeOut( uint16_t u16timeOut)
 /**
  * @brief
  * Return communication Watchdog state.
- * It could be usefull to reset outputs if the watchdog is fired.
+ * It could be useful to reset outputs if the watchdog is fired.
  *
  * @return TRUE if millis() > u32timeOut
  * @ingroup loop
  */
-bool Master::getTimeOutState()
+bool Master::timeOutExpired()
 {
     return ((unsigned long)(millis() -u32timeOut) > (unsigned long)u16timeOut);
 }
@@ -630,7 +630,7 @@ int8_t Master::poll()
 	uint8_t u8current;
     u8current = port->available();
 
-    if ((unsigned long)(millis() -u32timeOut) > (unsigned long)u16timeOut)
+    if (timeOutExpired())
     {
         u8state = COM_IDLE;
         u8lastError = NO_REPLY;
