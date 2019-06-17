@@ -172,7 +172,6 @@ protected:
     uint16_t u16OutCnt;
     uint16_t u16errCnt;
     uint32_t u32time;
-    uint32_t u32timeOut; //?? Master
     uint32_t u32overTime;
 
 protected:
@@ -207,6 +206,7 @@ private:
     uint8_t   u8state;
     uint16_t* au16regs;
     uint16_t  u16timeOut;
+    uint32_t  u32timeOut; //!< Timestamp of last query (millis).
 
 private:
     uint8_t validateAnswer( const uint8_t* buf, uint8_t count );
@@ -456,7 +456,8 @@ Master::Master(Stream& port_, uint8_t u8txenpin_):
     Base(port_, u8txenpin_),
     u8state(COM_IDLE),
     au16regs(NULL),
-    u16timeOut(1000)
+    u16timeOut(1000),
+    u32timeOut(0)
 {}
 
 
@@ -602,6 +603,7 @@ int8_t Master::query( modbus_t telegram )
     }
 
     sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+    u32timeOut = millis();
     u8state = COM_WAITING;
     u8lastError = 0;
     return 0;
@@ -808,7 +810,6 @@ int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
         return u8exception;
     }
 
-    u32timeOut = millis();
     u8lastError = 0;
 
     // process message
@@ -1001,7 +1002,6 @@ Base::Base(Stream& port_, uint8_t u8txenpin_):
     u16OutCnt(0),
     u16errCnt(0),
     u32time(0),
-    u32timeOut(0),
     u32overTime(0)
 {}
 
@@ -1091,9 +1091,6 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
         digitalWrite( u8txenpin, LOW );
     }
     while(port->read() >= 0);
-
-    // set time-out for master
-    u32timeOut = millis();
 
     // increase message counter
     u16OutCnt++;
