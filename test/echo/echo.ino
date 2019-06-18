@@ -25,7 +25,7 @@ modbus_t telegram;
 int8_t master_poll_result;
 
 Loopback master_stream(MAX_BUFFER+1);
-Modbus master(0,master_stream,0);
+Master master(master_stream,0);
 
 
 //
@@ -37,7 +37,7 @@ uint16_t slave_data[slave_data_count+1]; ///< Include extra OOB register
 int8_t slave_poll_result;
 
 Loopback slave_stream(MAX_BUFFER+1);
-Modbus slave(slave_id,slave_stream,0);
+Slave slave(slave_id,slave_stream,0);
 
 
 /** Calculate MODBUS CRC of data. */
@@ -214,13 +214,26 @@ void test_oob_holding_register()
 {
   uint16_t errcnt0 = master.getErrCnt();
 
-  // Currently FAILS, because the slave does not check its bounds.
+  slave.clearLastError();
+  master.clearLastError();
   uint16_t val = read_holding_register(slave_data_count);
   test_equal(
       "test_oob_holding_register, non-existent",
       slave_data_count,
       master.getErrCnt(),
       errcnt0+1
+    );
+  test_equal(
+      "test_oob_holding_register, non-existent: slave error code",
+      slave_data_count,
+      slave.getLastError(),
+      modbus::EXC_ILLEGAL_DATA_ADDRESS
+    );
+  test_equal(
+      "test_oob_holding_register, non-existent: master error code",
+      slave_data_count,
+      master.getLastError(),
+      modbus::EXC_ILLEGAL_DATA_ADDRESS
     );
 
   // Check that the slave does not read beyond the bounds of its data array.
@@ -232,6 +245,8 @@ void test_oob_holding_register()
     );
 
   // Check that the slave will not write to arbitrary memory.
+  slave.clearLastError();
+  master.clearLastError();
   uint16_t new_val = 0xBAD;
   write_holding_register(slave_data_count, new_val);
   test_equal(
@@ -239,6 +254,18 @@ void test_oob_holding_register()
       slave_data_count,
       new_val == slave_data[slave_data_count],
       0 ///< Should be false
+    );
+  test_equal(
+      "test_oob_holding_register, OOB write check: slave error code",
+      slave_data_count,
+      slave.getLastError(),
+      modbus::EXC_ILLEGAL_DATA_ADDRESS
+    );
+  test_equal(
+      "test_oob_holding_register, OOB write check: master error code",
+      slave_data_count,
+      master.getLastError(),
+      modbus::EXC_ILLEGAL_DATA_ADDRESS
     );
 }
 
@@ -322,8 +349,22 @@ void test_coils()
 
   // Test for correct handling of a non-existent register.
   // Currently FAILS, because the slave does not check its bounds.
+  slave.clearLastError();
+  master.clearLastError();
   read_coil(slave_data_count*16);
   test_equal("test_coils, non-existent",0,master.getErrCnt(),errcnt0+1);
+  test_equal(
+      "test_coils, non-existent: slave error code",
+      0,
+      slave.getLastError(),
+      modbus::EXC_ILLEGAL_DATA_ADDRESS
+    );
+  test_equal(
+      "test_coils, non-existent: master error code",
+      0,
+      master.getLastError(),
+      modbus::EXC_ILLEGAL_DATA_ADDRESS
+    );
 }
 
 
