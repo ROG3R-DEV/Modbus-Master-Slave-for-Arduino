@@ -117,20 +117,36 @@ enum COM_STATES
 
 enum ERR_LIST
 {
-    ERR_NOT_MASTER                = -1,
-    ERR_POLLING                   = -2,
-    ERR_BUFF_OVERFLOW             = -3,
-    ERR_BAD_CRC                   = -4,
-    ERR_EXCEPTION                 = -5
+    ERR_WAITING           = -1, //!< Master::query(). Master is still waiting for previous query.
+    ERR_FUNC_CODE         = -2, //!< Master::query(). Bad / unsupported function code.
+    ERR_BAD_SLAVE_ID      = -3, //!< Master::query(). Telegram specifies invalid slave ID.
+    ERR_BAD_CRC           = -4, //!< poll() methods.
+    ERR_EXCEPTION         = -5, //!< Master::poll(): Exception received from slave. Slave::poll(): Exception returned to master.
+    ERR_TIME_OUT_EXPIRED  = -6, //!< Master::poll(). Master has given up waiting for answer.
+    ERR_TX_BUFF_OVERFLOW  = -7, //!< Any Tx method.
+    ERR_RX_BUFF_OVERFLOW  = -8, //!< poll() methods.
+    ERR_MALFORMED_MESSAGE = -9  //!< poll() methods.
 };
 
-enum
+enum EXC_LIST
 {
-    NO_REPLY = 255,
-    EXC_FUNC_CODE = 1,
+    // Standard names, from MODBUS protocol.
+    EXC_ILLEGAL_FUNCTION      = 1,
+    EXC_ILLEGAL_DATA_ADDRESS  = 2,
+    EXC_ILLEGAL_DATA_VALUE    = 3,
+    EXC_SERVER_DEVICE_FAILURE = 4,
+    EXC_ACKNOWLEDGE           = 5,
+    EXC_SERVER_DEVICE_BUSY    = 6,
+
+    EXC_MEMORY_PARITY_ERROR   = 8,
+    EXC_GATEWAY_PATH_UNAVAILABLE = 10,
+    EXC_GATEWAY_TARGET_DEVICE_FAILED_TO_RESPOND = 11,
+
+    // Old, backward compatibility names.
+    EXC_FUNC_CODE  = 1,
     EXC_ADDR_RANGE = 2,
     EXC_REGS_QUANT = 3,
-    EXC_EXECUTE = 4
+    EXC_EXECUTE    = 4
 };
 
 const unsigned char fctsupported[] =
@@ -166,7 +182,7 @@ private:
 protected:
     Stream* port; //!< Pointer to Stream class object (Either HardwareSerial or SoftwareSerial)
     uint8_t u8txenpin; //!< flow control pin: 0=USB or RS-232 mode, >1=RS-485 mode
-    uint8_t u8lastError;
+    int8_t  i8lastError;
     uint8_t u8lastRec;
     uint16_t u16InCnt;
     uint16_t u16OutCnt;
@@ -177,6 +193,7 @@ protected:
 protected:
     Base(Stream& port, uint8_t u8txenpin =0);
 
+    int8_t setError( int8_t i8error );
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
     int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
     uint16_t calcCRC( const uint8_t* data, uint8_t len ) const;
@@ -186,7 +203,8 @@ public:
     uint16_t getInCnt(); //!<number of incoming messages
     uint16_t getOutCnt(); //!<number of outcoming messages
     uint16_t getErrCnt(); //!<error counter
-    uint8_t getLastError(); //!<get last error message
+    int8_t   getLastError(); //!< Get last error (ERR_XXX) or exception (EXC_XXX) code.
+    void     clearLastError(); //!< Set last error to 0.
     void setTxendPinOverTime( uint32_t u32overTime );
 
     friend class Modbus;
@@ -209,7 +227,7 @@ private:
     uint32_t  u32timeOut; //!< Timestamp of last query (millis).
 
 private:
-    uint8_t validateAnswer( const uint8_t* buf, uint8_t count );
+    int8_t validateAnswer( const uint8_t* buf, uint8_t count );
     void get_FC1( const uint8_t* buf, uint8_t count );
     void get_FC3( const uint8_t* buf, uint8_t count );
 
@@ -238,9 +256,9 @@ private:
     uint8_t u8id; //!< Slave ID: 1..247
 
 private:
-    uint8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count );
-    uint8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
-    uint8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
+    int8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count );
+    int8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
+    int8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) const;
     int8_t process_FC1( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
     int8_t process_FC3( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
@@ -299,7 +317,7 @@ public:
         { CHECK_SLAVE(-2); return static_cast<Slave*>(impl)->getID(); }
     uint8_t getState()
         { CHECK_MASTER(-2); return static_cast<Master*>(impl)->getState(); }
-    uint8_t getLastError() //!<get last error message
+    int8_t getLastError() //!<get last error message
         { return impl->getLastError(); }
     void setID( uint8_t u8id ) //!<write new ID for the slave
         { CHECK_SLAVE(); static_cast<Slave*>(impl)->setID(u8id); }
@@ -345,7 +363,7 @@ void Base::start()
 {
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
-        // return RS485 transceiver to transmit mode
+        // return RS485 transceiver to receive mode
         pinMode(u8txenpin, OUTPUT);
         digitalWrite(u8txenpin, LOW);
     }
@@ -401,15 +419,32 @@ uint16_t Base::getErrCnt()
 /**
  * Get the last error in the protocol processor
  *
- * @returnreturn   NO_REPLY = 255      Time-out
- * @return   EXC_FUNC_CODE = 1   Function code not available
- * @return   EXC_ADDR_RANGE = 2  Address beyond available space for Modbus registers
- * @return   EXC_REGS_QUANT = 3  Coils or registers number beyond the available space
+ * @return   ERR_WAITING = -1 Master is still waiting for previous query.
+ * @return   ERR_FUNC_CODE = -2 Bad / unsupported function code.
+ * @return   ERR_BAD_SLAVE_ID = -3 Telegram specifies invalid slave ID.
+ * @return   ERR_BAD_CRC = -4 Received message with incorrect CRC.
+ * @return   ERR_TIME_OUT_EXPIRED = -6 Master has given up waiting for answer.
+ * @return   ERR_TX_BUFF_OVERFLOW = -7 Buffer too small for outgoing message.
+ * @return   ERR_RX_BUFF_OVERFLOW = -8 Buffer too small for incoming message.
+ * @return   ERR_MALFORMED_MESSAGE = -9 Incoming message too short.
+ * @return   EXC_ILLEGAL_FUNCTION = 1 Function code not available.
+ * @return   EXC_ILLEGAL_DATA_ADDRESS = 2  Address beyond available space for Modbus registers
  * @ingroup buffer
  */
-uint8_t Base::getLastError()
+int8_t Base::getLastError()
 {
-    return u8lastError;
+    return i8lastError;
+}
+
+
+/**
+ * Clear the last error in the protocol processor
+ *
+ * @ingroup buffer
+ */
+void Base::clearLastError()
+{
+    i8lastError = 0;
 }
 
 
@@ -513,15 +548,18 @@ uint8_t Master::getState()
  *
  * @see modbus_t
  * @param modbus_t  modbus telegram structure (id, fct, ...)
+ * @return          success: 0, error: <0
  * @ingroup loop
  * @todo finish function 15
  */
 int8_t Master::query( modbus_t telegram )
 {
     uint8_t u8regsno, u8bytesno;
-    if (u8state != COM_IDLE) return -1;
+    if (u8state != COM_IDLE)
+        return setError(ERR_WAITING);
 
-    if ((telegram.u8id==0) || (telegram.u8id>247)) return -3;
+    if ((telegram.u8id==0) || (telegram.u8id>247))
+        return setError(ERR_BAD_SLAVE_ID);
 
     au16regs = telegram.au16reg;
 
@@ -599,13 +637,16 @@ int8_t Master::query( modbus_t telegram )
         break;
 
     default:
-        return -4; // Unrecognised or unsupported function code.
+        return setError(ERR_FUNC_CODE); // Unrecognised or unsupported function code.
     }
 
-    sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+    int8_t i8bytes_sent = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+    if (i8bytes_sent < 0)
+    {
+        return setError(i8bytes_sent);
+    }
     u32timeOut = millis();
     u8state = COM_WAITING;
-    u8lastError = 0;
     return 0;
 }
 
@@ -620,32 +661,33 @@ int8_t Master::query( modbus_t telegram )
  * Any incoming data would be redirected to au16regs pointer,
  * as defined in its modbus_t query telegram.
  *
- * @params	nothing
- * @return errors counter
+ * @params  nothing
+ * @return  error: <0, still waiting: 0, answer arrived: >0
  * @ingroup loop
  */
 int8_t Master::poll()
 {
+    if (u8state != COM_WAITING)
+        return 0; // Not expecting any incoming messages.
+
     // check if there is any incoming frame
-	uint8_t u8current;
-    u8current = port->available();
+    uint8_t u8current = port->available();
 
     if (timeOutExpired())
     {
         u8state = COM_IDLE;
-        u8lastError = NO_REPLY;
-        u16errCnt++;
-        return 0;
+        return setError(ERR_TIME_OUT_EXPIRED);
     }
 
-    if (u8current == 0) return 0;
+    if (u8current == 0)
+        return 0; // Still waiting for reply.
 
     // check T35 after frame end or still no frame end
     if (u8current != u8lastRec)
     {
         u8lastRec = u8current;
         u32time = millis();
-        return 0;
+        return 0; // Waiting for T35.
     }
     if ((unsigned long)(millis() -u32time) < (unsigned long)T35) return 0;
 
@@ -653,20 +695,19 @@ int8_t Master::poll()
     u8lastRec = 0;
     uint8_t au8Buffer[MAX_BUFFER];
     int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
-    if (i8bytes_read < 6) //7 was incorrect for functions 1 and 2 the smallest frame could be 6 bytes long
+    if (i8bytes_read < 0)
     {
         u8state = COM_IDLE;
-        u16errCnt++;
-        return i8bytes_read; // ?? Why are we returning this?
+        return setError(i8bytes_read); // Pass error on from getRxBuffer().
     }
     uint8_t u8BufferSize = i8bytes_read;
 
     // validate message: id, CRC, FCT, exception
-    uint8_t u8exception = validateAnswer( au8Buffer, u8BufferSize );
-    if (u8exception != 0)
+    int8_t i8error = validateAnswer( au8Buffer, u8BufferSize );
+    if (i8error != 0)
     {
         u8state = COM_IDLE;
-        return u8exception;
+        return setError(i8error);
     }
 
     // process answer
@@ -765,7 +806,7 @@ uint8_t Slave::getID()
  *
  * @param *regs  register table for communication exchange
  * @param u8size  size of the register table
- * @return 0 if no query, 1..4 if communication error, >4 if correct query processed
+ * @return        error: <0, nothing to do: 0, request processed: >0
  * @ingroup loop
  */
 int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
@@ -773,72 +814,72 @@ int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
     // check if there is any incoming frame
     uint8_t u8current = port->available();
 
-    if (u8current == 0) return 0;
+    if (u8current == 0)
+        return 0; // Still waiting for request.
 
     // check T35 after frame end or still no frame end
     if (u8current != u8lastRec)
     {
         u8lastRec = u8current;
         u32time = millis();
-        return 0;
+        return 0; // Waiting for T35.
     }
     if ((unsigned long)(millis() -u32time) < (unsigned long)T35) return 0;
 
     u8lastRec = 0;
     uint8_t au8Buffer[MAX_BUFFER];
     int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
-    u8lastError = i8bytes_read;
-    if (i8bytes_read < 7)
+    if (i8bytes_read < 0)
     {
-        return i8bytes_read;
+        return setError(i8bytes_read); // Pass error on from getRxBuffer().
     }
     uint8_t u8BufferSize = i8bytes_read;
 
     // check slave id
-    if (au8Buffer[ ID ] != u8id) return 0;
+    if (ID < u8BufferSize  &&  au8Buffer[ ID ] != u8id)
+        return 0; // This message is for another slave.
 
     // validate message: CRC, FCT, address and size
-    uint8_t u8exception = validateRequest( u8size, au8Buffer, u8BufferSize );
-    if (u8exception > 0)
+    int8_t i8error = validateRequest( u8size, au8Buffer, u8BufferSize );
+    if (i8error != 0)
     {
-        if (u8exception != NO_REPLY)
+        if (i8error > 0)
         {
-            u8BufferSize = buildException( u8exception, au8Buffer, MAX_BUFFER );
+            u8BufferSize = buildException( i8error, au8Buffer, MAX_BUFFER );
             sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+            // Ignore any error reported by sendTxBuffer().
         }
-        u8lastError = u8exception;
-        return u8exception;
+        return setError(i8error);
     }
 
-    u8lastError = 0;
-
     // process message
+    int8_t i8rv = ERR_FUNC_CODE;
     switch( au8Buffer[ FUNC ] )
     {
     case MB_FC_READ_COILS:
     case MB_FC_READ_DISCRETE_INPUT:
-        return process_FC1( regs, u8size, au8Buffer, MAX_BUFFER );
+        i8rv = process_FC1( regs, u8size, au8Buffer, MAX_BUFFER );
         break;
     case MB_FC_READ_INPUT_REGISTER:
     case MB_FC_READ_REGISTERS :
-        return process_FC3( regs, u8size, au8Buffer, MAX_BUFFER );
+        i8rv = process_FC3( regs, u8size, au8Buffer, MAX_BUFFER );
         break;
     case MB_FC_WRITE_COIL:
-        return process_FC5( regs, u8size, au8Buffer, MAX_BUFFER );
+        i8rv = process_FC5( regs, u8size, au8Buffer, MAX_BUFFER );
         break;
     case MB_FC_WRITE_REGISTER :
-        return process_FC6( regs, u8size, au8Buffer, MAX_BUFFER );
+        i8rv = process_FC6( regs, u8size, au8Buffer, MAX_BUFFER );
         break;
     case MB_FC_WRITE_MULTIPLE_COILS:
-        return process_FC15( regs, u8size, au8Buffer, MAX_BUFFER );
+        i8rv = process_FC15( regs, u8size, au8Buffer, MAX_BUFFER );
         break;
     case MB_FC_WRITE_MULTIPLE_REGISTERS :
-        return process_FC16( regs, u8size, au8Buffer, MAX_BUFFER );
+        i8rv = process_FC16( regs, u8size, au8Buffer, MAX_BUFFER );
         break;
     default:
         break;
     }
-    return i8bytes_read;
+    return setError(i8rv);
 }
 
 
@@ -996,7 +1037,7 @@ void Modbus::begin(long u32speed)
 Base::Base(Stream& port_, uint8_t u8txenpin_):
     port(&port_),
     u8txenpin(u8txenpin_),
-    u8lastError(0),
+    i8lastError(0),
     u8lastRec(0),
     u16InCnt(0),
     u16OutCnt(0),
@@ -1008,12 +1049,38 @@ Base::Base(Stream& port_, uint8_t u8txenpin_):
 
 /**
  * @brief
+ * Increment the error count, and record the last error.
+ *
+ * @param i8error  The error being reported. >0 - MODBUS exception. <0 Internal error.
+ * @return         i8error 0: 0, >0: ERR_EXCEPTION, <0: i8error
+ * @ingroup error
+ */
+int8_t Base::setError( int8_t i8error )
+{
+  if (i8error)
+  {
+      ++u16errCnt;
+      i8lastError = i8error;
+      // Error return values are always <0.
+      // If the caller needs to see the specific exception, then they must
+      // call getLastError().
+      if (i8error > 0)
+      {
+          return ERR_EXCEPTION;
+      }
+  }
+  return i8error;
+}
+
+
+/**
+ * @brief
  * This method moves Serial buffer data to out local buffer.
  *
  * @param buf     buffer into which the message should be read.
  * @param count   length of data buffer, in bytes.
  * @return buffer message length if OK,
- *                  ERR_BUFF_OVERFLOW if message is larger than size
+ *                  ERR_RX_BUFF_OVERFLOW if message is larger than size
  * @ingroup buffer
  */
 int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
@@ -1029,8 +1096,7 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
         {
             // Discard the remaining incoming data.
             while(port->read() >= 0);
-            u16errCnt++;
-            return ERR_BUFF_OVERFLOW;
+            return ERR_RX_BUFF_OVERFLOW;
         }
         buf[ i ] = port->read();
         i ++;
@@ -1047,13 +1113,13 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
  * the RS485 transceiver in output state as long as the message is being sent.
  * This is done with UCSRxA register.
  * The CRC is appended to the buffer before starting to send it. The new
- * length of the buffer is returned, or ERR_BUFF_OVERFLOW if the buffer is
+ * length of the buffer is returned, or ERR_TX_BUFF_OVERFLOW if the buffer is
  * too short.
  *
  * @param  buf     data buffer.
  * @param  count   message length.
  * @param  size    capacity of buffer in bytes.
- * @return         message length, or ERR_BUFF_OVERFLOW
+ * @return         message length, or ERR_TX_BUFF_OVERFLOW
  * @ingroup buffer
  */
 int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
@@ -1061,7 +1127,7 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
     // append CRC to message
     if (count+2 > size)
     {
-        return ERR_BUFF_OVERFLOW;
+        return ERR_TX_BUFF_OVERFLOW;
     }
     uint16_t u16crc = calcCRC( buf, count );
     buf[ count ] = u16crc >> 8;
@@ -1140,23 +1206,35 @@ uint16_t Base::calcCRC(const uint8_t* data, uint8_t len) const
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-uint8_t Master::validateAnswer( const uint8_t* buf, uint8_t count )
+int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count )
 {
+    if (count <= 2)
+    {
+        return ERR_MALFORMED_MESSAGE;
+    }
+
     // check message crc vs calculated crc
     uint16_t u16MsgCRC =
         ((buf[count - 2] << 8)
          | buf[count - 1]); // combine the crc Low & High bytes
     if ( calcCRC( buf, count-2 ) != u16MsgCRC )
     {
-        u16errCnt ++;
-        return NO_REPLY;
+        return ERR_BAD_CRC;
     }
 
     // check exception
     if ((buf[ FUNC ] & 0x80) != 0)
     {
-        u16errCnt ++;
-        return ERR_EXCEPTION;
+        if (buf[ 2 ] <= INT8_MAX)
+            return buf[ 2 ];
+        else
+            return ERR_EXCEPTION;
+    }
+
+    // Check for minimum message size.
+    if (count < 6) //7 was incorrect for functions 1 and 2 the smallest frame could be 6 bytes long
+    {
+        return ERR_MALFORMED_MESSAGE;
     }
 
     // check fct code
@@ -1171,8 +1249,7 @@ uint8_t Master::validateAnswer( const uint8_t* buf, uint8_t count )
     }
     if (!isSupported)
     {
-        u16errCnt ++;
-        return EXC_FUNC_CODE;
+        return EXC_ILLEGAL_FUNCTION;
     }
 
     return 0; // OK, no exception code thrown
@@ -1234,19 +1311,23 @@ void Master::get_FC3( const uint8_t* buf, uint8_t count )
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-uint8_t Slave::validateRequest(
+int8_t Slave::validateRequest(
     uint8_t        regsize,
     const uint8_t* buf,
     uint8_t        count)
 {
+    if (count <= 2)
+    {
+        return ERR_MALFORMED_MESSAGE;
+    }
+
     // check message crc vs calculated crc
     uint16_t u16MsgCRC =
         ((buf[count - 2] << 8)
          | buf[count - 1]); // combine the crc Low & High bytes
     if ( calcCRC( buf, count-2 ) != u16MsgCRC )
     {
-        u16errCnt ++;
-        return NO_REPLY;
+        return ERR_BAD_CRC;
     }
 
     // check fct code
@@ -1261,8 +1342,12 @@ uint8_t Slave::validateRequest(
     }
     if (!isSupported)
     {
-        u16errCnt ++;
-        return EXC_FUNC_CODE;
+        return EXC_ILLEGAL_FUNCTION;
+    }
+
+    if (count < 7)
+    {
+        return ERR_MALFORMED_MESSAGE;
     }
 
     // check start address & nb range
@@ -1310,7 +1395,7 @@ uint8_t Slave::validateRequest(
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-inline uint8_t Slave::validateCoilAddress(
+inline int8_t Slave::validateCoilAddress(
     uint8_t  regsize,
     uint16_t startaddr,
     uint16_t quantity ) const
@@ -1332,14 +1417,14 @@ inline uint8_t Slave::validateCoilAddress(
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-inline uint8_t Slave::validateRegAddress(
+inline int8_t Slave::validateRegAddress(
     uint8_t  regsize,
     uint16_t startaddr,
     uint16_t quantity ) const
 {
   uint16_t endaddr = startaddr + quantity;
   if(endaddr > regsize)
-      return EXC_ADDR_RANGE;
+      return EXC_ILLEGAL_DATA_ADDRESS;
   else
       return 0;
 }
