@@ -177,7 +177,9 @@ const unsigned char fctsupported[] =
 class Base
 {
 private:
+    Base(); //!< Not default constructable.
     Base(const Base&); //!< Not copyable.
+    Base& operator= (const Base&); //!< Not assignable.
 
 protected:
     Stream* port; //!< Pointer to Stream class object (Either HardwareSerial or SoftwareSerial)
@@ -220,7 +222,10 @@ public:
 class Master: public Base
 {
 private:
+    Master(); //!< Not default constructable.
     Master(const Master&); //!< Not copyable.
+    Master& operator= (const Master&); //!< Not assignable.
+
     uint8_t   u8state;
     uint16_t* au16regs;
     uint16_t  u16timeOut;
@@ -252,7 +257,10 @@ public:
 class Slave: public Base
 {
 private:
+    Slave(); //!< Not default constructable.
     Slave(const Slave&); //!< Not copyable.
+    Slave& operator= (const Slave&); //!< Not assignable.
+
     uint8_t u8id; //!< Slave ID: 1..247
 
 private:
@@ -284,7 +292,10 @@ public:
 class Modbus
 {
 private:
+    Modbus(); //!< Not default constructable.
     Modbus(const Modbus&); //!< Not copyable.
+    Modbus& operator= (const Modbus&); //!< Not assignable.
+
     Base* impl; //!< A pointer to a Master or Slave object.
     bool  is_master;
 
