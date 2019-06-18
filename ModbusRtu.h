@@ -552,7 +552,6 @@ uint8_t Master::getState() const
 
 /**
  * @brief
- * *** Only Modbus Master ***
  * Generate a query to an slave with a modbus_t telegram structure
  * The Master must be in COM_IDLE mode. After it, its state would be COM_WAITING.
  * This method has to be called only in loop() section.
@@ -663,7 +662,7 @@ int8_t Master::query( modbus_t telegram )
 
 
 /**
- * @brief *** Only for Modbus Master ***
+ * @brief
  * This method checks if there is any incoming answer if pending.
  * If there is no answer, it would change Master state to COM_IDLE.
  * This method must be called only at loop section.
@@ -744,6 +743,8 @@ int8_t Master::poll()
         break;
     }
     u8state = COM_IDLE;
+    // ?? Currently, there is no bounds checking in get_FCXX() functions, so there
+    // ?? can be no error to report here.
     return u8BufferSize;
 }
 
@@ -809,7 +810,6 @@ uint8_t Slave::getID() const
 
 /**
  * @brief
- * *** Only for Modbus Slave ***
  * This method checks if there is any incoming query
  * Afterwards, it would shoot a validation routine plus a register query
  * Avoid any delay() function !!!!
@@ -890,7 +890,14 @@ int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
     default:
         break;
     }
-    return setError(i8rv);
+    // ?? Eventually, the process_FCXX() functions ought to be able to
+    // ?? raise exceptions, so we won't be able to use a positive value here
+    // ?? as a sign that everything went OK.
+    // ?? But for now, it is correct.
+    if (i8rv < 0)
+        return setError(i8rv);
+    else
+        return i8rv;
 }
 
 
