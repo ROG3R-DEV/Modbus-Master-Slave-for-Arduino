@@ -202,10 +202,10 @@ protected:
 
 public:
     void start();
-    uint16_t getInCnt(); //!<number of incoming messages
-    uint16_t getOutCnt(); //!<number of outcoming messages
-    uint16_t getErrCnt(); //!<error counter
-    int8_t   getLastError(); //!< Get last error (ERR_XXX) or exception (EXC_XXX) code.
+    uint16_t getInCnt() const; //!<number of incoming messages
+    uint16_t getOutCnt() const; //!<number of outcoming messages
+    uint16_t getErrCnt() const; //!<error counter
+    int8_t   getLastError() const; //!< Get last error (ERR_XXX) or exception (EXC_XXX) code.
     void     clearLastError(); //!< Set last error to 0.
     void setTxendPinOverTime( uint32_t u32overTime );
 
@@ -232,7 +232,7 @@ private:
     uint32_t  u32timeOut; //!< Timestamp of last query (millis).
 
 private:
-    int8_t validateAnswer( const uint8_t* buf, uint8_t count );
+    int8_t validateAnswer( const uint8_t* buf, uint8_t count ) const;
     void get_FC1( const uint8_t* buf, uint8_t count );
     void get_FC3( const uint8_t* buf, uint8_t count );
 
@@ -240,8 +240,8 @@ public:
     Master(Stream& port, uint8_t u8txenpin =0);
 
     void setTimeOut( uint16_t u16timeOut); //!<write communication watch-dog timer
-    bool timeOutExpired(); //!<get communication watch-dog timer state
-    uint8_t getState();
+    bool timeOutExpired() const; //!<get communication watch-dog timer state
+    uint8_t getState() const;
 
     int8_t query( modbus_t telegram ); //!<only for master
     int8_t poll(); //!<cyclic poll for master
@@ -264,7 +264,7 @@ private:
     uint8_t u8id; //!< Slave ID: 1..247
 
 private:
-    int8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count );
+    int8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count ) const;
     int8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     int8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
     int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) const;
@@ -279,7 +279,7 @@ public:
     Slave(uint8_t u8id, Stream& port, uint8_t u8txenpin =0);
 
     void setID( uint8_t u8id ); //!<write new ID for the slave
-    uint8_t getID(); //!<get slave ID between 1 and 247
+    uint8_t getID() const; //!<get slave ID between 1 and 247
 
     int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
 };
@@ -393,7 +393,7 @@ void Base::start()
  * @return input messages counter
  * @ingroup buffer
  */
-uint16_t Base::getInCnt()
+uint16_t Base::getInCnt() const
 {
     return u16InCnt;
 }
@@ -407,7 +407,7 @@ uint16_t Base::getInCnt()
  * @return transmitted messages counter
  * @ingroup buffer
  */
-uint16_t Base::getOutCnt()
+uint16_t Base::getOutCnt() const
 {
     return u16OutCnt;
 }
@@ -421,7 +421,7 @@ uint16_t Base::getOutCnt()
  * @return errors counter
  * @ingroup buffer
  */
-uint16_t Base::getErrCnt()
+uint16_t Base::getErrCnt() const
 {
     return u16errCnt;
 }
@@ -442,7 +442,7 @@ uint16_t Base::getErrCnt()
  * @return   EXC_ILLEGAL_DATA_ADDRESS = 2  Address beyond available space for Modbus registers
  * @ingroup buffer
  */
-int8_t Base::getLastError()
+int8_t Base::getLastError() const
 {
     return i8lastError;
 }
@@ -532,7 +532,7 @@ void Master::setTimeOut( uint16_t u16timeOut)
  * @return TRUE if millis() > u32timeOut
  * @ingroup loop
  */
-bool Master::timeOutExpired()
+bool Master::timeOutExpired() const
 {
     return ((unsigned long)(millis() -u32timeOut) > (unsigned long)u16timeOut);
 }
@@ -544,7 +544,7 @@ bool Master::timeOutExpired()
  * @return = 0 IDLE, = 1 WAITING FOR ANSWER
  * @ingroup buffer
  */
-uint8_t Master::getState()
+uint8_t Master::getState() const
 {
     return u8state;
 }
@@ -801,7 +801,7 @@ void Slave::setID( uint8_t u8id)
  * @return u8id	current slave address between 1 and 247
  * @ingroup setup
  */
-uint8_t Slave::getID()
+uint8_t Slave::getID() const
 {
     return this->u8id;
 }
@@ -1217,7 +1217,7 @@ uint16_t Base::calcCRC(const uint8_t* data, uint8_t len) const
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count )
+int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
 {
     if (count <= 2)
     {
@@ -1325,7 +1325,7 @@ void Master::get_FC3( const uint8_t* buf, uint8_t count )
 int8_t Slave::validateRequest(
     uint8_t        regsize,
     const uint8_t* buf,
-    uint8_t        count)
+    uint8_t        count) const
 {
     if (count <= 2)
     {
