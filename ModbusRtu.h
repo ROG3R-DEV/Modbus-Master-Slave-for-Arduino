@@ -185,17 +185,18 @@ protected:
     Stream* port; //!< Pointer to Stream class object (Either HardwareSerial or SoftwareSerial)
     uint8_t u8txenpin; //!< flow control pin: 0=USB or RS-232 mode, >1=RS-485 mode
     int8_t  i8lastError;
-    uint8_t u8lastRec;
+    int     iLastBytesAvailable;
     uint16_t u16InCnt;
     uint16_t u16OutCnt;
     uint16_t u16errCnt;
-    uint32_t u32time;
+    unsigned long  ulT35timer; // Type matches millis() return type.
     uint32_t u32overTime;
 
 protected:
     Base(Stream& port, uint8_t u8txenpin =0);
 
     int8_t setError( int8_t i8error );
+    bool   rxFrameReady();
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
     int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
     uint16_t calcCRC( const uint8_t* data, uint8_t len ) const;
@@ -380,7 +381,7 @@ void Base::start()
     }
 
     while(port->read() >= 0);
-    u8lastRec = 0;
+    iLastBytesAvailable = 0;
     u16InCnt = u16OutCnt = u16errCnt = 0;
 }
 
@@ -680,29 +681,16 @@ int8_t Master::poll()
     if (u8state != COM_WAITING)
         return 0; // Not expecting any incoming messages.
 
-    // check if there is any incoming frame
-    uint8_t u8current = port->available();
-
     if (timeOutExpired())
     {
         u8state = COM_IDLE;
         return setError(ERR_TIME_OUT_EXPIRED);
     }
 
-    if (u8current == 0)
-        return 0; // Still waiting for reply.
-
-    // check T35 after frame end or still no frame end
-    if (u8current != u8lastRec)
-    {
-        u8lastRec = u8current;
-        u32time = millis();
-        return 0; // Waiting for T35.
-    }
-    if ((unsigned long)(millis() -u32time) < (unsigned long)T35) return 0;
+    if (!rxFrameReady())
+        return 0;
 
     // transfer Serial buffer frame to a local buffer.
-    u8lastRec = 0;
     uint8_t au8Buffer[MAX_BUFFER];
     int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
     if (i8bytes_read < 0)
@@ -822,22 +810,9 @@ uint8_t Slave::getID() const
  */
 int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
 {
-    // check if there is any incoming frame
-    uint8_t u8current = port->available();
+    if (!rxFrameReady())
+        return 0;
 
-    if (u8current == 0)
-        return 0; // Still waiting for request.
-
-    // check T35 after frame end or still no frame end
-    if (u8current != u8lastRec)
-    {
-        u8lastRec = u8current;
-        u32time = millis();
-        return 0; // Waiting for T35.
-    }
-    if ((unsigned long)(millis() -u32time) < (unsigned long)T35) return 0;
-
-    u8lastRec = 0;
     uint8_t au8Buffer[MAX_BUFFER];
     int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
     if (i8bytes_read < 0)
@@ -1056,11 +1031,11 @@ Base::Base(Stream& port_, uint8_t u8txenpin_):
     port(&port_),
     u8txenpin(u8txenpin_),
     i8lastError(0),
-    u8lastRec(0),
+    iLastBytesAvailable(0),
     u16InCnt(0),
     u16OutCnt(0),
     u16errCnt(0),
-    u32time(0),
+    ulT35timer(0),
     u32overTime(0)
 {}
 
@@ -1088,6 +1063,53 @@ int8_t Base::setError( int8_t i8error )
       }
   }
   return i8error;
+}
+
+
+/**
+ * @brief Returns TRUE if there is a frame ready to process in the Rx buffer.
+ *
+ * Use port->available() to get the amount of data waiting in the receive
+ * buffer. When this value is non-zero, and has not changed for two consecutive
+ * calls, we assume that the complete frame has arrived.
+ *
+ * We then wait for T35 milliseconds before processing the message, to ensure
+ * that the bus is silent for >3.5 character widths between frames, as required
+ * by the MODBUS standard.
+ *
+ * (This implementation has limited control over the Serial port, so we cannot
+ * apply this delay in the transport layer.)
+ *
+ * @ingroup buffer
+ */
+bool Base::rxFrameReady()
+{
+    // Check if there is any incoming frame.
+    int bytesAvailable = port->available();
+    if (bytesAvailable > 0)
+    {
+        if (bytesAvailable == iLastBytesAvailable)
+        {
+            // The serial port has now buffered the entire frame.
+            if (T35==0 || (millis() - ulT35timer) >= (unsigned long)T35)
+            {
+                // The T35 timer has expired.
+                // Reset, ready for the next frame.
+                iLastBytesAvailable = 0;
+
+                // OK to process the frame.
+                return true;
+            }
+        }
+        else
+        {
+            // The frame is still arriving.
+            // Record the current size, and set the T35 timer.
+            iLastBytesAvailable = bytesAvailable;
+            ulT35timer = millis();
+        }
+    }
+    return false;
 }
 
 
