@@ -439,6 +439,9 @@ void setup()
   master_stream.connect(slave_stream);
 }
 
+
+long delay_seconds = 1;
+
 void loop()
 {
   init_master();
@@ -460,6 +463,6 @@ void loop()
   test_equal("master error count", 0, master.getErrCnt(), 3);
 
   Serial.println(F("OK"));
-  delay(10000);
+  delay((delay_seconds++)*1000);
 }
 
