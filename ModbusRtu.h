@@ -1088,10 +1088,11 @@ bool Base::rxFrameReady()
     int bytesAvailable = port->available();
     if (bytesAvailable > 0)
     {
+        const unsigned long now = millis();
         if (bytesAvailable == iLastBytesAvailable)
         {
             // The serial port has now buffered the entire frame.
-            if (T35==0 || (millis() - ulT35timer) >= (unsigned long)T35)
+            if (T35==0 || (now - ulT35timer) >= (unsigned long)T35)
             {
                 // The T35 timer has expired.
                 // Reset, ready for the next frame.
@@ -1106,7 +1107,7 @@ bool Base::rxFrameReady()
             // The frame is still arriving.
             // Record the current size, and set the T35 timer.
             iLastBytesAvailable = bytesAvailable;
-            ulT35timer = millis();
+            ulT35timer = now;
         }
     }
     return false;
@@ -1125,23 +1126,24 @@ bool Base::rxFrameReady()
  */
 int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
 {
-    if (u8txenpin > 1)
-        digitalWrite( u8txenpin, LOW );
-
+    // Pre-condition: We know that (port->available() > 0), because
+    // rxFrameReady() has returned TRUE.
     u16InCnt++;
     uint8_t i = 0;
-    while ( port->available() )
+    while(true)
     {
-        if (i >= count)
-        {
-            // Discard the remaining incoming data.
-            while(port->read() >= 0);
-            return ERR_RX_BUFF_OVERFLOW;
-        }
-        buf[ i ] = port->read();
-        i ++;
+      int c = port->read();
+      if (i < count)
+      {
+        if (c < 0)
+            break;
+        buf[ i++ ] = c;
+      }
+      else if (c < 0)
+      {
+        return ERR_RX_BUFF_OVERFLOW;
+      }
     }
-
     return i;
 }
 
@@ -1170,10 +1172,9 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
         return ERR_TX_BUFF_OVERFLOW;
     }
     uint16_t u16crc = calcCRC( buf, count );
-    buf[ count ] = u16crc >> 8;
-    count++;
-    buf[ count ] = u16crc & 0x00ff;
-    count++;
+    buf[ count   ] = u16crc >> 8;
+    buf[ count+1 ] = u16crc & 0x00ff;
+    count += 2;
 
     if (u8txenpin > 1)
     {
