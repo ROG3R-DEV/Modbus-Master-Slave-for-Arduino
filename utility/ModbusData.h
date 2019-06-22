@@ -27,15 +27,9 @@ inline uint16_t bswap16(uint16_t v)
 }
 
 
-class CoilBlock
+class Block
 {
 public:
-  CoilBlock(
-      uint8_t*  data_bytes_,
-      uint16_t  length_,
-      uint16_t  start_address_ = 0
-    );
-
   /** Return the first valid address in this block. */
   uint16_t get_start_address() const { return start_address; }
 
@@ -43,7 +37,7 @@ public:
   uint16_t get_length() const { return length; }
 
   /** If addr is a valid address in this block, returns the number of
-   *  coils (bits) from addr to the end of the block.
+   *  data from addr to the end of the block.
    *  If addr is not in this block, return zero. */
   uint16_t have_address(uint16_t addr) const;
 
@@ -52,6 +46,31 @@ public:
 
   /** Clear the "dirty" flag. */
   void set_clean() { dirty = false; }
+
+private:
+  Block();             ///< Class is non-default-constructable.
+  Block(const Block&); ///< Class is non-copyable.
+
+protected:
+  Block(
+      uint16_t  length_,
+      uint16_t  start_address_ = 0
+    );
+
+  const uint16_t  length; ///< The number of addresses in this block.
+  const uint16_t  start_address;
+  bool            dirty; ///< TRUE if data in this block has been modified.
+};
+
+
+class CoilBlock: public Block
+{
+public:
+  CoilBlock(
+      uint8_t*  data_bytes_,
+      uint16_t  length_,
+      uint16_t  start_address_ = 0
+    );
 
   int8_t write_one(uint16_t addr, bool value);
 
@@ -68,16 +87,11 @@ public:
       uint16_t& quantity) const;
 
 private:
-  CoilBlock(const CoilBlock&); ///< Class is non-copyable.
-
   uint8_t* const  data_bytes;
-  const uint16_t  length; ///< The number of coils (bits) in this block.
-  const uint16_t  start_address;
-  bool            dirty; ///< TRUE if data in this block has been modified.
 };
 
 
-class RegisterBlock
+class RegisterBlock: public Block
 {
 public:
   RegisterBlock(
@@ -86,47 +100,25 @@ public:
       uint16_t  start_address_ = 0
     );
 
-  /** Return the first valid address in this block. */
-  uint16_t get_start_address() const { return start_address; }
-
-  /** Return the number of registers (2-byte words) in this block. */
-  uint16_t get_length() const { return length; }
-
-  /** If addr is a valid address in this block, returns the number of
-   *  registers (2-byte words) from addr to the end of the block.
-   *  If addr is not in this block, return zero. */
-  uint16_t have_address(uint16_t addr) const;
-
-  /** Return TRUE if data in this block has been modified. */
-  bool is_dirty() const { return dirty; }
-
-  /** Clear the "dirty" flag. */
-  void set_clean() { dirty = false; }
-
   //
   // No checks are made.
   // The caller is assumed to have checked that the address is valid.
 
   int8_t write_many(
-      uint16_t&  addr,
-      uint16_t*& src,
-      uint16_t&  quantity);
+      uint16_t& dst_addr,
+      uint8_t*& src,
+      uint16_t& quantity);
 
   int8_t read_many(
-      uint16_t*& dest,
-      uint16_t&  src_addr,
-      uint16_t&  quantity) const;
+      uint8_t*& dest,
+      uint16_t& src_addr,
+      uint16_t& quantity) const;
 
 private:
   RegisterBlock(const RegisterBlock&); ///< Class is non-copyable.
 
-  uint16_t* data_words;
-  uint16_t  length; ///< The number of registers (2-byte words) in this block.
-  uint16_t  start_address;
-  bool      dirty; ///< TRUE if data in this block has been modified.
+  uint16_t* const  data_words;
 };
-
-
 
 
 class Mapping
@@ -168,15 +160,13 @@ public:
       uint16_t quantity =1
     ) const;
 
-  int8_t write_register(uint16_t addr, uint16_t value);
-
   int8_t write_registers(
       uint16_t  dest_addr,
-      uint16_t* src,
+      uint8_t*  src,
       uint16_t  quantity =1);
 
   int8_t read_registers(
-      uint16_t* dest,
+      uint8_t*  dest,
       uint16_t  src_addr,
       uint16_t  quantity =1) const;
 
@@ -222,23 +212,6 @@ private:
         }
       }
       return -2;
-    }
-
-  /** Helper for implementing write_coil() & write_register(). */
-  template<typename T_Block, typename T_value>
-  int8_t write_one(
-      T_Block* const block, uint16_t num_blocks,
-      uint16_t addr, T_value value)
-    {
-      for(size_t i=0; i<num_blocks; ++i)
-      {
-        if(block[i]->have_address(addr))
-        {
-          dirty = true;
-          return block[i]->write_one(addr, value);
-        }
-      }
-      return EXC_ILLEGAL_DATA_ADDRESS;
     }
 };
 

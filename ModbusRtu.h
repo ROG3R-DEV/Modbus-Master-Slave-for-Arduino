@@ -1276,11 +1276,8 @@ int8_t Slave::validateRequest( const uint8_t* buf, uint8_t count ) const
  */
 int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf ) const
 {
-    uint8_t u8func = buf[ FUNC ];  // get the original FUNC code
-
-    buf[ ID ]      = u8id;
-    buf[ FUNC ]    = u8func + 0x80;
-    buf[ 2 ]       = u8exception;
+    buf[ FUNC ] += 0x80;
+    buf[ 2 ]     = u8exception;
     return EXCEPTION_SIZE;
 }
 
@@ -1344,8 +1341,7 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Read the requested values into buf[3] onwards.
-    uint16_t* dest = (uint16_t*)(buf+3);
-    return mapping.read_registers(dest, addr, quantity);
+    return mapping.read_registers(buf + 3, addr, quantity);
 }
 
 
@@ -1398,7 +1394,7 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
     count = 6;
 
     // Set addr = value.
-    return mapping.write_registers(addr, (uint16_t*)(buf + NB_HI));
+    return mapping.write_registers(addr, buf + NB_HI);
 }
 
 
@@ -1466,8 +1462,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
     count = 6;
 
     // Write the requested values from buf[7] onwards.
-    uint16_t* src_byte = (uint16_t*)(buf + 7);
-    return mapping.write_registers(addr, src_byte, quantity);
+    return mapping.write_registers(addr, buf + 7, quantity);
 }
 
 

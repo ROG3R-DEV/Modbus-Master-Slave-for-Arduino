@@ -6,12 +6,10 @@ namespace modbus {
 //
 // CoilBlock
 
-CoilBlock::CoilBlock(
-  uint8_t*  data_bytes_,
+Block::Block(
   uint16_t  length_,
   uint16_t  start_address_
 ):
-  data_bytes(data_bytes_),
   length(length_), ///< The number of coils (bits) in this block.
   start_address(start_address_),
   dirty(false)
@@ -21,13 +19,22 @@ CoilBlock::CoilBlock(
 /** If addr is a valid address in this block, returns the number of
 *  coils (bits) from addr to the end of the block.
 *  If addr is not in this block, return zero. */
-uint16_t CoilBlock::have_address(uint16_t addr) const
+uint16_t Block::have_address(uint16_t addr) const
 {
   if(addr >= start_address && addr < start_address + length)
       return start_address - addr + length;
   else
       return 0;
 }
+
+CoilBlock::CoilBlock(
+  uint8_t*  data_bytes_,
+  uint16_t  length_,
+  uint16_t  start_address_
+):
+  Block(length_, start_address_),
+  data_bytes(data_bytes_)
+{}
 
 
 int8_t CoilBlock::write_one(uint16_t addr, bool value)
@@ -119,23 +126,9 @@ RegisterBlock::RegisterBlock(
   uint16_t  length_, ///< Number of registers (2-byte words) in this block.
   uint16_t  start_address_
 ):
-  data_words(data_words_),
-  length(length_),
-  start_address(start_address_),
-  dirty(false)
+  Block(length_, start_address_),
+  data_words(data_words_)
 {}
-
-
-/** If addr is a valid address in this block, returns the number of
-*  registers (2-byte words) from addr to the end of the block.
-*  If addr is not in this block, return zero. */
-uint16_t RegisterBlock::have_address(uint16_t addr) const
-{
-  if(addr >= start_address && addr < start_address + length)
-      return start_address - addr + length;
-  else
-      return 0;
-}
 
 
 //
@@ -143,13 +136,14 @@ uint16_t RegisterBlock::have_address(uint16_t addr) const
 // The caller is assumed to have checked that the address is valid.
 
 int8_t RegisterBlock::write_many(
-  uint16_t&  addr,
-  uint16_t*& src,
-  uint16_t&  quantity)
+  uint16_t& dst_addr,
+  uint8_t*& src,
+  uint16_t& quantity)
 {
-  while(quantity && (addr - start_address) < length)
+  while(quantity && (dst_addr - start_address) < length)
   {
-    data_words[addr++ - start_address] = bswap16( *(src++) );
+    data_words[dst_addr++ - start_address] = (uint16_t)src[0] << 8 | src[1];
+    src += 2;
     --quantity;
     dirty = true;
   }
@@ -158,13 +152,15 @@ int8_t RegisterBlock::write_many(
 
 
 int8_t RegisterBlock::read_many(
-  uint16_t*& dest,
-  uint16_t&  src_addr,
-  uint16_t&  quantity) const
+  uint8_t*& dest,
+  uint16_t& src_addr,
+  uint16_t& quantity) const
 {
   while(quantity && (src_addr - start_address) < length)
   {
-    *(dest++) = bswap16( data_words[src_addr++ - start_address] );
+    const uint16_t offset = src_addr++ - start_address;
+    *(dest++) = data_words[offset] >> 8;
+    *(dest++) = data_words[offset] & 0xFF;
     --quantity;
   }
   return 0;
@@ -244,7 +240,12 @@ bool Mapping::have_register_addresses(uint16_t first_addr, uint16_t quantity) co
 
 int8_t Mapping::write_coil(uint16_t addr, bool value)
 {
-  return write_one(coil_block, num_coil_blocks, addr, value);
+  int b0 = find_addresses(coil_block, num_coil_blocks, addr, 1);
+  if(b0 < 0)
+      return EXC_ILLEGAL_DATA_ADDRESS;
+
+  dirty = true;
+  return coil_block[b0]->write_one(addr, value);
 }
 
 
@@ -260,9 +261,9 @@ int8_t Mapping::write_coils(
   if(b0 < 0)
       return EXC_ILLEGAL_DATA_ADDRESS;
 
+  dirty = true;
   for(size_t b=b0; b<num_coil_blocks; ++b)
   {
-    dirty = true;
     int8_t rv =
         coil_block[b]->write_many(dest_addr, src_byte, src_bit, quantity);
 
@@ -299,7 +300,7 @@ int8_t Mapping::read_coils(
 
 int8_t Mapping::write_registers(
     uint16_t  dest_addr,
-    uint16_t* src,
+    uint8_t*  src,
     uint16_t  quantity)
 {
   // First check that we have all of the addresses.
@@ -307,9 +308,9 @@ int8_t Mapping::write_registers(
   if(b0 < 0)
       return EXC_ILLEGAL_DATA_ADDRESS;
 
+  dirty = true;
   for(size_t b=b0; b<num_register_blocks; ++b)
   {
-    dirty = true;
     int8_t rv = register_block[b]->write_many(dest_addr, src, quantity);
 
     if(rv != 0  ||  quantity == 0)
@@ -320,7 +321,7 @@ int8_t Mapping::write_registers(
 
 
 int8_t Mapping::read_registers(
-  uint16_t* dest,
+  uint8_t*  dest,
   uint16_t  src_addr,
   uint16_t  quantity) const
 {
