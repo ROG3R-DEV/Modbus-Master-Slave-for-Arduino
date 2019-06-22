@@ -53,7 +53,13 @@ public:
   /** Clear the "dirty" flag. */
   void set_clean() { dirty = false; }
 
-  void write_one(uint16_t addr, bool value);
+  int8_t write_one(uint16_t addr, bool value);
+
+  int8_t write_many(
+      uint16_t& dest_addr,
+      uint8_t*& src_byte,
+      uint8_t&  src_bit,
+      uint16_t& quantity);
 
   int8_t read_many(
       uint8_t*& dest_byte,
@@ -101,8 +107,6 @@ public:
   // No checks are made.
   // The caller is assumed to have checked that the address is valid.
 
-  void write_one(uint16_t addr, uint16_t value);
-
   int8_t write_many(
       uint16_t&  addr,
       uint16_t*& src,
@@ -129,6 +133,7 @@ class Mapping
 {
 public:
   Mapping(uint16_t num_coil_blocks = 0, uint16_t num_register_blocks = 0);
+  ~Mapping();
   int add_coil_block(CoilBlock& cb);
   int add_register_block(RegisterBlock& rb);
 
@@ -142,7 +147,14 @@ public:
 
   bool have_register_addresses(uint16_t first_addr, uint16_t quantity =1) const;
 
-  void write_coil(uint16_t addr, bool value);
+  int8_t write_coil(uint16_t addr, bool value);
+
+  int8_t write_coils(
+      uint16_t dest_addr,
+      uint8_t* src_byte,
+      uint8_t  src_bit,
+      uint16_t quantity =1
+    );
 
   /** Also used for reading "discrete inputs"
    *  (MODBUS terminology for read-only booleans).
@@ -156,7 +168,12 @@ public:
       uint16_t quantity =1
     ) const;
 
-  void write_register(uint16_t addr, uint16_t value);
+  int8_t write_register(uint16_t addr, uint16_t value);
+
+  int8_t write_registers(
+      uint16_t  dest_addr,
+      uint16_t* src,
+      uint16_t  quantity =1);
 
   int8_t read_registers(
       uint16_t* dest,
@@ -204,12 +221,12 @@ private:
           break;
         }
       }
-      return -1;
+      return -2;
     }
 
   /** Helper for implementing write_coil() & write_register(). */
   template<typename T_Block, typename T_value>
-  void write_one(
+  int8_t write_one(
       T_Block* const block, uint16_t num_blocks,
       uint16_t addr, T_value value)
     {
@@ -218,11 +235,10 @@ private:
         if(block[i]->have_address(addr))
         {
           dirty = true;
-          block[i]->write_one(addr, value);
-          return;
+          return block[i]->write_one(addr, value);
         }
       }
-      // ?? Error?
+      return EXC_ILLEGAL_DATA_ADDRESS;
     }
 };
 

@@ -86,7 +86,8 @@ enum ERR_LIST
     ERR_TIME_OUT_EXPIRED  = -6, //!< Master::poll(). Master has given up waiting for answer.
     ERR_TX_BUFF_OVERFLOW  = -7, //!< Any Tx method.
     ERR_RX_BUFF_OVERFLOW  = -8, //!< poll() methods.
-    ERR_MALFORMED_MESSAGE = -9  //!< poll() methods.
+    ERR_MALFORMED_MESSAGE = -9,  //!< poll() methods.
+    ERR_OUT_OF_MEMORY     = -10
 };
 
 enum EXC_LIST

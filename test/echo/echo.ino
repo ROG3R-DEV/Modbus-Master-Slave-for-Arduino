@@ -121,10 +121,20 @@ void init_master()
 void init_slave()
 {
   // Also initialise the *extra* register, at the end of the array.
+#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
+  Serial.print(F("\ninit_slave:"));
+#endif
   for(size_t i=0; i<=slave_data_count; ++i)
   {
     slave_data[i] = addr2word(i);
+#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
+    Serial.print(" ");
+    Serial.print(slave_data[i]);
+#endif
   }
+#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
+  Serial.println("");
+#endif
 }
 
 

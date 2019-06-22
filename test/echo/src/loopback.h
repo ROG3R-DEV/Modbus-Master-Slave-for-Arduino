@@ -47,8 +47,12 @@ public:
       outstream.print(F(" bytes"));
       if(len)
       {
-        outstream.print(F(", next byte = "));
-        outstream.print(buffer[tail], HEX);
+        outstream.print(F(", next bytes = "));
+        for(size_t i=0; i<len && i<16; ++i)
+        {
+          outstream.print(buffer[(tail+i) % size], HEX);
+          outstream.print(" ");
+        }
       }
       outstream.println("");
     }

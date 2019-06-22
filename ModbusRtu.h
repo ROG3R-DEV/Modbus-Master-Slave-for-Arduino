@@ -146,16 +146,14 @@ private:
     uint8_t u8id; //!< Slave ID: 1..247
 
 private:
-    int8_t validateRequest( uint8_t regsize, const uint8_t* buf, uint8_t count ) const;
-    int8_t validateCoilAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
-    int8_t validateRegAddress( uint8_t regsize, uint16_t startaddr, uint16_t quantity ) const;
-    int8_t buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) const;
-    int8_t process_FC1( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
-    int8_t process_FC3( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
-    int8_t process_FC5( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
-    int8_t process_FC6( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
-    int8_t process_FC15( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
-    int8_t process_FC16( uint16_t *regs, uint8_t u8size, uint8_t* buf, uint8_t bufsize );
+    int8_t validateRequest( const uint8_t* buf, uint8_t count ) const;
+    int8_t buildException( uint8_t u8exception, uint8_t* buf ) const;
+    int8_t process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize );
+    int8_t process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize );
+    int8_t process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count );
+    int8_t process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count );
+    int8_t process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count );
+    int8_t process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count );
 
 public:
     Slave(uint8_t u8id, Stream& port, uint8_t u8txenpin =0);
@@ -164,6 +162,7 @@ public:
     uint8_t getID() const; //!<get slave ID between 1 and 247
 
     int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
+    int8_t poll( Mapping& mapping );               //!<cyclic poll for slave
 };
 
 
@@ -678,11 +677,8 @@ uint8_t Slave::getID() const
 
 
 /**
- * @brief
- * This method checks if there is any incoming query
- * Afterwards, it would shoot a validation routine plus a register query
- * Avoid any delay() function !!!!
- * After a successful frame between the Master and the Slave, the time-out timer is reset.
+ * @brief Backward compatibility wrapper for Slave::poll()
+ * Constructs the MODBUS mapping on the fly from an array of uint16_t.
  *
  * @param *regs  register table for communication exchange
  * @param u8size  size of the register table
@@ -690,6 +686,30 @@ uint8_t Slave::getID() const
  * @ingroup loop
  */
 int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
+{
+  CoilBlock cb((uint8_t*)regs, 16*(uint16_t)u8size);
+  RegisterBlock rb(regs, u8size);
+  Mapping mapping(1,1);
+  if( mapping.add_coil_block(cb) )
+      return ERR_OUT_OF_MEMORY;
+  if( mapping.add_register_block(rb) )
+      return ERR_OUT_OF_MEMORY;
+  return poll( mapping );
+}
+
+
+/**
+ * @brief
+ * This method checks if there is any incoming query
+ * Afterwards, it would shoot a validation routine plus a register query
+ * Avoid any delay() function !!!!
+ * After a successful frame between the Master and the Slave, the time-out timer is reset.
+ *
+ * @param mapping MODBUS mapping for slave data.
+ * @return        error: <0, nothing to do: 0, request processed: >0
+ * @ingroup loop
+ */
+int8_t Slave::poll( Mapping& mapping )
 {
     if (!rxFrameReady())
         return 0;
@@ -706,54 +726,48 @@ int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
     if (ID < u8BufferSize  &&  au8Buffer[ ID ] != u8id)
         return 0; // This message is for another slave.
 
-    // validate message: CRC, FCT, address and size
-    int8_t i8error = validateRequest( u8size, au8Buffer, u8BufferSize );
-    if (i8error != 0)
+    // validate message: CRC, and size
+    int8_t i8error = validateRequest( au8Buffer, u8BufferSize );
+    if (i8error==0)
     {
-        if (i8error > 0)
+        switch( au8Buffer[ FUNC ] )
         {
-            u8BufferSize = buildException( i8error, au8Buffer, MAX_BUFFER );
-            sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
-            // Ignore any error reported by sendTxBuffer().
+        case MB_FC_READ_COILS:
+        case MB_FC_READ_DISCRETE_INPUT:
+            i8error = process_FC1( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
+            break;
+        case MB_FC_READ_INPUT_REGISTER:
+        case MB_FC_READ_REGISTERS :
+            i8error = process_FC3( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
+            break;
+        case MB_FC_WRITE_COIL:
+            i8error = process_FC5( mapping, au8Buffer, u8BufferSize );
+            break;
+        case MB_FC_WRITE_REGISTER :
+            i8error = process_FC6( mapping, au8Buffer, u8BufferSize );
+            break;
+        case MB_FC_WRITE_MULTIPLE_COILS:
+            i8error = process_FC15( mapping, au8Buffer, u8BufferSize );
+            break;
+        case MB_FC_WRITE_MULTIPLE_REGISTERS :
+            i8error = process_FC16( mapping, au8Buffer, u8BufferSize );
+            break;
+        default:
+            i8error = EXC_ILLEGAL_FUNCTION;
+            break;
         }
-        return setError(i8error);
     }
-
-    // process message
-    int8_t i8rv = ERR_FUNC_CODE;
-    switch( au8Buffer[ FUNC ] )
+    if (i8error > 0)
     {
-    case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUT:
-        i8rv = process_FC1( regs, u8size, au8Buffer, MAX_BUFFER );
-        break;
-    case MB_FC_READ_INPUT_REGISTER:
-    case MB_FC_READ_REGISTERS :
-        i8rv = process_FC3( regs, u8size, au8Buffer, MAX_BUFFER );
-        break;
-    case MB_FC_WRITE_COIL:
-        i8rv = process_FC5( regs, u8size, au8Buffer, MAX_BUFFER );
-        break;
-    case MB_FC_WRITE_REGISTER :
-        i8rv = process_FC6( regs, u8size, au8Buffer, MAX_BUFFER );
-        break;
-    case MB_FC_WRITE_MULTIPLE_COILS:
-        i8rv = process_FC15( regs, u8size, au8Buffer, MAX_BUFFER );
-        break;
-    case MB_FC_WRITE_MULTIPLE_REGISTERS :
-        i8rv = process_FC16( regs, u8size, au8Buffer, MAX_BUFFER );
-        break;
-    default:
-        break;
+        u8BufferSize = buildException( i8error, au8Buffer );
+        sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+        // Ignore any error reported by sendTxBuffer().
     }
-    // ?? Eventually, the process_FCXX() functions ought to be able to
-    // ?? raise exceptions, so we won't be able to use a positive value here
-    // ?? as a sign that everything went OK.
-    // ?? But for now, it is correct.
-    if (i8rv < 0)
-        return setError(i8rv);
-    else
-        return i8rv;
+    else if (i8error==0)
+    {
+      i8error = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+    }
+    return setError(i8error);
 }
 
 
@@ -1042,7 +1056,7 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
  * @param  buf     data buffer.
  * @param  count   message length.
  * @param  size    capacity of buffer in bytes.
- * @return         message length, or ERR_TX_BUFF_OVERFLOW
+ * @return         O: OK, ERR_TX_BUFF_OVERFLOW: buffer overflow
  * @ingroup buffer
  */
 int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
@@ -1083,7 +1097,7 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
     // increase message counter
     u16OutCnt++;
 
-    return count;
+    return 0;
 }
 
 
@@ -1185,7 +1199,7 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
  * @ingroup register
  * TODO: finish its implementation
  */
-void Master::get_FC1( const uint8_t* buf, uint8_t count )
+void Master::get_FC1( const uint8_t* buf, uint8_t /*count*/ )
 {
      uint8_t u8byte = 3;
      for (uint8_t i=0; i< buf[2]; i++) {
@@ -1209,7 +1223,7 @@ void Master::get_FC1( const uint8_t* buf, uint8_t count )
  *
  * @ingroup register
  */
-void Master::get_FC3( const uint8_t* buf, uint8_t count )
+void Master::get_FC3( const uint8_t* buf, uint8_t /*count*/ )
 {
     uint8_t u8byte, i;
     u8byte = 3;
@@ -1233,12 +1247,9 @@ void Master::get_FC3( const uint8_t* buf, uint8_t count )
  * @return 0 if OK, EXCEPTION if anything fails
  * @ingroup buffer
  */
-int8_t Slave::validateRequest(
-    uint8_t        regsize,
-    const uint8_t* buf,
-    uint8_t        count) const
+int8_t Slave::validateRequest( const uint8_t* buf, uint8_t count ) const
 {
-    if (count <= 2)
+    if (count <= 3)
     {
         return ERR_MALFORMED_MESSAGE;
     }
@@ -1252,113 +1263,18 @@ int8_t Slave::validateRequest(
         return ERR_BAD_CRC;
     }
 
-    // check fct code
-    boolean isSupported = false;
-    for (uint8_t i = 0; i< sizeof( fctsupported ); i++)
-    {
-        if (fctsupported[i] == buf[FUNC])
-        {
-            isSupported = 1;
-            break;
-        }
-    }
-    if (!isSupported)
-    {
-        return EXC_ILLEGAL_FUNCTION;
-    }
-
-    if (count < 7)
-    {
-        return ERR_MALFORMED_MESSAGE;
-    }
-
-    // check start address & nb range
-    switch ( buf[ FUNC ] )
-    {
-    case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUT:
-    case MB_FC_WRITE_MULTIPLE_COILS:
-      {
-        uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-        uint16_t u16Coilno    = word( buf[ NB_HI ],  buf[ NB_LO ] );
-        return validateCoilAddress(regsize, u16StartCoil, u16Coilno);
-      }
-    case MB_FC_WRITE_COIL:
-      {
-        uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-        return validateCoilAddress(regsize, u16StartCoil, 1);
-      }
-    case MB_FC_WRITE_REGISTER :
-      {
-        uint16_t u16StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-        return validateRegAddress(regsize, u16StartAdd, 1);
-      }
-    case MB_FC_READ_REGISTERS :
-    case MB_FC_READ_INPUT_REGISTER :
-    case MB_FC_WRITE_MULTIPLE_REGISTERS :
-      {
-        uint16_t u16StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-        uint16_t u16regsno   = word( buf[ NB_HI ],  buf[ NB_LO ] );
-        return validateRegAddress(regsize, u16StartAdd, u16regsno);
-      }
-    }
     return 0; // OK, no exception code thrown
 }
 
 
 /**
  * @brief
- * Determine the validity of a range of coil (or discrete input) addresses.
- *
- * @param  regsize   number of 16-bit words in the data array.
- *                   Valid addresses are in range [0,regsize*16).
- * @param  startaddr first coil address in range.
- * @param  quantity  number of coil address after startaddr.
- * @return 0 if OK, EXCEPTION if anything fails
- * @ingroup buffer
- */
-inline int8_t Slave::validateCoilAddress(
-    uint8_t  regsize,
-    uint16_t startaddr,
-    uint16_t quantity ) const
-{
-  uint16_t firstword = startaddr/16;
-  uint16_t lastword  = (startaddr+quantity-1)/16;
-  return validateRegAddress(regsize, firstword, 1+lastword-firstword);
-}
-
-
-/**
- * @brief
- * Determine the validity of a range of register addresses.
- *
- * @param  regsize   number of 16-bit words in the data array.
- *                   Valid addresses are in range [0,regsize).
- * @param  startaddr first register address in range.
- * @param  quantity  number of register address after startaddr.
- * @return 0 if OK, EXCEPTION if anything fails
- * @ingroup buffer
- */
-inline int8_t Slave::validateRegAddress(
-    uint8_t  regsize,
-    uint16_t startaddr,
-    uint16_t quantity ) const
-{
-  uint16_t endaddr = startaddr + quantity;
-  if(endaddr > regsize)
-      return EXC_ILLEGAL_DATA_ADDRESS;
-  else
-      return 0;
-}
-
-
-/**
- * @brief
- * This method builds an exception message
+ * This method builds an exception message. The buffer is assumed to be large enough
+ * for the exception - which is only 3 bytes long.
  *
  * @ingroup buffer
  */
-int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) const
+int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf ) const
 {
     uint8_t u8func = buf[ FUNC ];  // get the original FUNC code
 
@@ -1377,52 +1293,28 @@ int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf, uint8_t size ) 
  * @return u8BufferSize Response to master length
  * @ingroup discrete
  */
-int8_t Slave::process_FC1( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uint8_t bufsize )
+int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize )
 {
-    uint8_t u8currentRegister, u8currentBit, u8bytesno, u8bitsno;
-    uint16_t u16currentCoil, u16coil;
+    // Validate the request message size.
+    if (count != 8)
+        return ERR_MALFORMED_MESSAGE;
 
-    // get the first and last coil from the message
-    uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t u16Coilno = word( buf[ NB_HI ], buf[ NB_LO ] );
+    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
 
-    // put the number of bytes in the outcoming message
-    u8bytesno = (uint8_t) (u16Coilno / 8);
-    if (u16Coilno % 8 != 0) u8bytesno ++;
-    buf[ ADD_HI ] = u8bytesno;
-    uint8_t count = ADD_LO;
-    buf[ count + u8bytesno - 1 ] = 0;
+    // Set the message size.
+    buf[ 2 ] = (quantity+7)/8;
+    count = buf[ 2 ] + 3;
 
-    // read each coil from the register map and put its value inside the outcoming message
-    u8bitsno = 0;
+    // Validate the requested quantity.
+    if(0 == quantity || quantity > 2000 || count > bufsize-2)
+        return EXC_ILLEGAL_DATA_VALUE;
 
-    // Clear all data bits in outgoing message.
-    memset( buf+count, 0, MAX_BUFFER-count );
-
-    for (u16currentCoil = 0; u16currentCoil < u16Coilno; u16currentCoil++)
-    {
-        u16coil = u16StartCoil + u16currentCoil;
-        u8currentRegister = (uint8_t) (u16coil / 16);
-        u8currentBit = (uint8_t) (u16coil % 16);
-
-        bitWrite(
-            buf[ count ],
-            u8bitsno,
-            bitRead( regs[ u8currentRegister ], u8currentBit ) );
-        u8bitsno ++;
-
-        if (u8bitsno > 7)
-        {
-            u8bitsno = 0;
-            count++;
-        }
-    }
-
-    // send outcoming message
-    if (u16Coilno % 8 != 0)
-        count ++;
-
-    return sendTxBuffer( buf, count, bufsize );
+    // Read the requested values into buf[3] onwards.
+    uint8_t* data_byte = buf+3;
+    uint8_t  data_bit  = 0;
+    memset(data_byte, 0, buf[ 2 ]);
+    return mapping.read_coils(data_byte, data_bit, addr, quantity);
 }
 
 
@@ -1434,24 +1326,26 @@ int8_t Slave::process_FC1( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
  * @return u8BufferSize Response to master length
  * @ingroup register
  */
-int8_t Slave::process_FC3( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uint8_t bufsize )
+int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize )
 {
+    // Validate the request message size.
+    if (count != 8)
+        return ERR_MALFORMED_MESSAGE;
 
-    uint8_t u8StartAdd = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint8_t u8regsno = word( buf[ NB_HI ], buf[ NB_LO ] );
-    uint8_t i;
+    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
 
-    buf[ 2 ] = u8regsno * 2;
-    uint8_t count = 3;
+    // Set the message size.
+    buf[ 2 ] = quantity * 2;
+    count = buf[ 2 ] + 3;
 
-    for (i = u8StartAdd; i < u8StartAdd + u8regsno; i++)
-    {
-        buf[ count ] = highByte(regs[i]);
-        count++;
-        buf[ count ] = lowByte(regs[i]);
-        count++;
-    }
-    return sendTxBuffer( buf, count, bufsize );
+    // Validate the requested quantity.
+    if(0 == quantity || quantity > 125 || count > bufsize-2)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    // Read the requested values into buf[3] onwards.
+    uint16_t* dest = (uint16_t*)(buf+3);
+    return mapping.read_registers(dest, addr, quantity);
 }
 
 
@@ -1463,24 +1357,24 @@ int8_t Slave::process_FC3( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
  * @return count Response to master length
  * @ingroup discrete
  */
-int8_t Slave::process_FC5( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uint8_t bufsize )
+int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
-    uint8_t u8currentRegister, u8currentBit;
-    uint16_t u16coil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    // Validate the request message size.
+    if (count != 8)
+        return ERR_MALFORMED_MESSAGE;
 
-    // point to the register and its bit
-    u8currentRegister = (uint8_t) (u16coil / 16);
-    u8currentBit = (uint8_t) (u16coil % 16);
+    uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    uint16_t value = word( buf[ NB_HI  ], buf[ NB_LO  ] );
 
-    // write to coil
-    bitWrite(
-        regs[ u8currentRegister ],
-        u8currentBit,
-        buf[ NB_HI ] == 0xff );
+    // Validate the value.
+    if(value != 0x0000  &&  value != 0xFF00)
+        return EXC_ILLEGAL_DATA_VALUE;
 
+    // Response is just the first 6 bytes of the request.
+    count = 6;
 
-    // send answer to master
-    return sendTxBuffer( buf, 6, bufsize );
+    // Set addr = value.
+    return mapping.write_coil(addr, value!=0);
 }
 
 
@@ -1492,16 +1386,19 @@ int8_t Slave::process_FC5( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
  * @return count Response to master length
  * @ingroup register
  */
-int8_t Slave::process_FC6( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uint8_t bufsize )
+int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
+    // Validate the request message size.
+    if (count != 8)
+        return ERR_MALFORMED_MESSAGE;
 
-    uint8_t u8add = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t u16val = word( buf[ NB_HI ], buf[ NB_LO ] );
+    uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
 
-    regs[ u8add ] = u16val;
+    // Response is just the first 6 bytes of the request.
+    count = 6;
 
-    // keep the same header
-    return sendTxBuffer( buf, RESPONSE_SIZE, bufsize );
+    // Set addr = value.
+    return mapping.write_registers(addr, (uint16_t*)(buf + NB_HI));
 }
 
 
@@ -1513,48 +1410,30 @@ int8_t Slave::process_FC6( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uin
  * @return count Response to master length
  * @ingroup discrete
  */
-int8_t Slave::process_FC15( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uint8_t bufsize )
+int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
-    uint8_t u8currentRegister, u8currentBit, u8frameByte, u8bitsno;
-    uint16_t u16currentCoil, u16coil;
-    boolean bTemp;
+    // Validate the request message size.
+    if (count < 10)
+        return ERR_MALFORMED_MESSAGE;
 
-    // get the first and last coil from the message
-    uint16_t u16StartCoil = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t u16Coilno = word( buf[ NB_HI ], buf[ NB_LO ] );
+    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    uint8_t  n        = buf[ 6 ];
 
+    // Validate the quantity.
+    if(0 == quantity || quantity > 0x7B0 || n != (quantity+7)/8)
+        return EXC_ILLEGAL_DATA_VALUE;
 
-    // read each coil from the register map and put its value inside the outcoming message
-    u8bitsno = 0;
-    u8frameByte = 7;
-    for (u16currentCoil = 0; u16currentCoil < u16Coilno; u16currentCoil++)
-    {
+    if (count != n + 9)
+        return ERR_MALFORMED_MESSAGE;
 
-        u16coil = u16StartCoil + u16currentCoil;
-        u8currentRegister = (uint8_t) (u16coil / 16);
-        u8currentBit = (uint8_t) (u16coil % 16);
+    // Response is just the first 6 bytes of the request.
+    count = 6;
 
-        bTemp = bitRead(
-                    buf[ u8frameByte ],
-                    u8bitsno );
-
-        bitWrite(
-            regs[ u8currentRegister ],
-            u8currentBit,
-            bTemp );
-
-        u8bitsno ++;
-
-        if (u8bitsno > 7)
-        {
-            u8bitsno = 0;
-            u8frameByte++;
-        }
-    }
-
-    // send outcoming message
-    // it's just a copy of the incomping frame until 6th byte
-    return sendTxBuffer( buf, 6, bufsize );
+    // Write the requested values from buf[7] onwards.
+    uint8_t* src_byte = buf + 7;
+    uint8_t  src_bit  = 0;
+    return mapping.write_coils(addr, src_byte, src_bit, quantity);
 }
 
 
@@ -1566,27 +1445,29 @@ int8_t Slave::process_FC15( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, ui
  * @return count Response to master length
  * @ingroup register
  */
-int8_t Slave::process_FC16( uint16_t *regs, uint8_t /*u8size*/, uint8_t* buf, uint8_t bufsize )
+int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
-    uint8_t u8StartAdd = buf[ ADD_HI ] << 8 | buf[ ADD_LO ];
-    uint8_t u8regsno = buf[ NB_HI ] << 8 | buf[ NB_LO ];
-    uint8_t i;
-    uint16_t temp;
+    // Validate the request message size.
+    if (count < 11)
+        return ERR_MALFORMED_MESSAGE;
 
-    // build header
-    buf[ NB_HI ]   = 0;
-    buf[ NB_LO ]   = u8regsno;
+    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    uint8_t  n        = buf[ 6 ];
 
-    // write registers
-    for (i = 0; i < u8regsno; i++)
-    {
-        temp = word(
-                   buf[ (BYTE_CNT + 1) + i * 2 ],
-                   buf[ (BYTE_CNT + 2) + i * 2 ]);
+    // Validate the quantity.
+    if(0 == quantity || quantity > 0x7B || n != quantity*2)
+        return EXC_ILLEGAL_DATA_VALUE;
 
-        regs[ u8StartAdd + i ] = temp;
-    }
-    return sendTxBuffer( buf, RESPONSE_SIZE, bufsize );
+    if (count != n + 9)
+        return ERR_MALFORMED_MESSAGE;
+
+    // Response is just the first 5 bytes of the request.
+    count = 6;
+
+    // Write the requested values from buf[7] onwards.
+    uint16_t* src_byte = (uint16_t*)(buf + 7);
+    return mapping.write_registers(addr, src_byte, quantity);
 }
 
 
