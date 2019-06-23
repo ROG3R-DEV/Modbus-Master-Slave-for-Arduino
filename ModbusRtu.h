@@ -689,11 +689,9 @@ int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
 {
   CoilBlock cb((uint8_t*)regs, 16*(uint16_t)u8size);
   RegisterBlock rb(regs, u8size);
-  Mapping mapping(1,1);
-  if( mapping.add_coil_block(cb) )
-      return ERR_OUT_OF_MEMORY;
-  if( mapping.add_register_block(rb) )
-      return ERR_OUT_OF_MEMORY;
+  Mapping mapping;
+  mapping.add_coil_block(cb);
+  mapping.add_register_block(rb);
   return poll( mapping );
 }
 
@@ -722,14 +720,14 @@ int8_t Slave::poll( Mapping& mapping )
     }
     uint8_t u8BufferSize = i8bytes_read;
 
-    // check slave id
-    if (ID < u8BufferSize  &&  au8Buffer[ ID ] != u8id)
-        return 0; // This message is for another slave.
-
     // validate message: CRC, and size
     int8_t i8error = validateRequest( au8Buffer, u8BufferSize );
     if (i8error==0)
     {
+        // check slave id
+        if (au8Buffer[ ID ] != u8id)
+            return 0; // This message is for another slave.
+
         switch( au8Buffer[ FUNC ] )
         {
         case MB_FC_READ_COILS:
@@ -1308,10 +1306,7 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Read the requested values into buf[3] onwards.
-    uint8_t* data_byte = buf+3;
-    uint8_t  data_bit  = 0;
-    memset(data_byte, 0, buf[ 2 ]);
-    return mapping.read_coils(data_byte, data_bit, addr, quantity);
+    return mapping.read_coils(buf + 3, addr, quantity);
 }
 
 
@@ -1370,7 +1365,7 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
     count = 6;
 
     // Set addr = value.
-    return mapping.write_coil(addr, value!=0);
+    return mapping.write_coils(addr, buf + NB_HI);
 }
 
 
@@ -1427,9 +1422,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
     count = 6;
 
     // Write the requested values from buf[7] onwards.
-    uint8_t* src_byte = buf + 7;
-    uint8_t  src_bit  = 0;
-    return mapping.write_coils(addr, src_byte, src_bit, quantity);
+    return mapping.write_coils(addr, buf + 7, quantity);
 }
 
 
@@ -1458,7 +1451,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count != n + 9)
         return ERR_MALFORMED_MESSAGE;
 
-    // Response is just the first 5 bytes of the request.
+    // Response is just the first 6 bytes of the request.
     count = 6;
 
     // Write the requested values from buf[7] onwards.

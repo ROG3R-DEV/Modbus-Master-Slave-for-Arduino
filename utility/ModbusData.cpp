@@ -37,19 +37,9 @@ CoilBlock::CoilBlock(
 {}
 
 
-int8_t CoilBlock::write_one(uint16_t addr, bool value)
-{
-  dirty = true;
-  const uint16_t offset = addr - start_address;
-  bitWrite(data_bytes[offset/8], offset%8, value);
-  return 0;
-}
-
-
 int8_t CoilBlock::write_many(
   uint16_t& dest_addr,
-  uint8_t*& src_byte,
-  uint8_t&  src_bit,
+  Position& src,
   uint16_t& quantity)
 {
   const uint16_t offset    = dest_addr - start_address;
@@ -64,18 +54,18 @@ int8_t CoilBlock::write_many(
     // ?? Optimise this...
     // ?? Probably best done with some assembly, where bit shifting can
     // ?? be done with carries available.
-    bool v = bitRead(*src_byte, src_bit++);
-    if(src_bit%8 == 0)
+    bool v = bitRead(*src.byte, src.bitn);
+    src.bitn = 0x07 & (src.bitn + 1);
+    if(src.bitn == 0)
     {
-      ++src_byte;
-      src_bit = 0;
+      ++src.byte;
     }
 
-    bitWrite(*dest_byte, dest_bit++, v);
-    if(dest_bit%8 == 0)
+    bitWrite(*dest_byte, dest_bit, v);
+    dest_bit = 0x07 & (dest_bit + 1);
+    if(dest_bit == 0)
     {
       ++dest_byte;
-      dest_bit = 0;
     }
   }
   quantity -= i;
@@ -84,8 +74,7 @@ int8_t CoilBlock::write_many(
 
 
 int8_t CoilBlock::read_many(
-  uint8_t*& dest_byte,
-  uint8_t&  dest_bit,
+  Position& dest,
   uint16_t& src_addr,
   uint16_t& quantity) const
 {
@@ -99,18 +88,19 @@ int8_t CoilBlock::read_many(
     // ?? Optimise this...
     // ?? Probably best done with some assembly, where bit shifting can
     // ?? be done with carries available.
-    bool v = bitRead(*src, src_bit++);
-    if(src_bit%8 == 0)
+    bool v = bitRead(*src, src_bit);
+    src_bit = 0x07 & (src_bit + 1);
+    if(src_bit == 0)
     {
       ++src;
-      src_bit = 0;
     }
 
-    bitWrite(*dest_byte, dest_bit++, v);
-    if(dest_bit%8 == 0)
+    bitWrite(*dest.byte, dest.bitn, v);
+    dest.bitn = 0x07 & (dest.bitn + 1);
+    if(dest.bitn == 0)
     {
-      ++dest_byte;
-      dest_bit = 0;
+      ++dest.byte;
+      *dest.byte = 0;
     }
   }
   quantity -= i;
@@ -137,13 +127,14 @@ RegisterBlock::RegisterBlock(
 
 int8_t RegisterBlock::write_many(
   uint16_t& dst_addr,
-  uint8_t*& src,
+  Position& src,
   uint16_t& quantity)
 {
   while(quantity && (dst_addr - start_address) < length)
   {
-    data_words[dst_addr++ - start_address] = (uint16_t)src[0] << 8 | src[1];
-    src += 2;
+    data_words[dst_addr - start_address] = (uint16_t)src.byte[0] << 8 | src.byte[1];
+    ++dst_addr;
+    src.byte += 2;
     --quantity;
     dirty = true;
   }
@@ -152,15 +143,17 @@ int8_t RegisterBlock::write_many(
 
 
 int8_t RegisterBlock::read_many(
-  uint8_t*& dest,
+  Position& dest,
   uint16_t& src_addr,
   uint16_t& quantity) const
 {
   while(quantity && (src_addr - start_address) < length)
   {
-    const uint16_t offset = src_addr++ - start_address;
-    *(dest++) = data_words[offset] >> 8;
-    *(dest++) = data_words[offset] & 0xFF;
+    const uint16_t offset = src_addr - start_address;
+    dest.byte[0] = data_words[offset] >> 8;
+    dest.byte[1] = data_words[offset] & 0xFF;
+    ++src_addr;
+    dest.byte += 2;
     --quantity;
   }
   return 0;
@@ -170,174 +163,200 @@ int8_t RegisterBlock::read_many(
 //
 // Mapping
 
-Mapping::Mapping(uint16_t num_coil_blocks, uint16_t num_register_blocks):
-  coil_block( (CoilBlock**)calloc(num_coil_blocks, sizeof(CoilBlock*)) ),
-  num_coil_blocks(0),
-  register_block( (RegisterBlock**)calloc(num_register_blocks, sizeof(RegisterBlock*)) ),
-  num_register_blocks(0)
+Mapping::Mapping():
+  coil_block_list_head(NULL),
+  register_block_list_head(NULL)
 {}
 
 
-Mapping::~Mapping()
+void Mapping::add_block(Block** ptr, Block& new_block)
 {
-  free(coil_block);
-  free(register_block);
+  while(*ptr)
+  {
+    if(new_block.get_start_address() < (**ptr).get_start_address())
+    {
+      new_block.next_block = *ptr;
+      *ptr = &new_block;
+      return;
+    }
+    ptr = &(**ptr).next_block;
+  }
+  new_block.next_block = NULL;
+  *ptr = &new_block;
 }
 
 
-int Mapping::add_coil_block(CoilBlock& cb)
+void Mapping::add_coil_block(CoilBlock& cb)
 {
-  void* ret = realloc(coil_block, num_coil_blocks+1);
-  if(ret)
-  {
-    coil_block = (CoilBlock**)ret;
-    coil_block[num_coil_blocks++] = &cb;
-    return 0;
-  }
-  // error
-  return -1; // Out of memory
+  add_block(&coil_block_list_head, cb);
 }
 
 
-int Mapping::add_register_block(RegisterBlock& rb)
+void Mapping::add_register_block(RegisterBlock& rb)
 {
-  void* ret = realloc(register_block, num_register_blocks+1);
-  if(ret)
-  {
-    register_block = (RegisterBlock**)ret;
-    register_block[num_register_blocks++] = &rb;
-    return 0;
-  }
-  // error
-  return -1; // Out of memory
+  add_block(&register_block_list_head, rb);
 }
 
 
 void Mapping::set_clean()
 {
-  for(size_t c=0; c<num_coil_blocks; ++c)
-      coil_block[c]->set_clean();
-  for(size_t r=0; r<num_register_blocks; ++r)
-      register_block[r]->set_clean();
+  Block* block = coil_block_list_head;
+  while(block)
+  {
+    block->set_clean();
+    block = block->next_block;
+  }
+  block = register_block_list_head;
+  while(block)
+  {
+    block->set_clean();
+    block = block->next_block;
+  }
   dirty = false;
 }
 
 
 bool Mapping::have_coil_addresses(uint16_t first_addr, uint16_t quantity) const
 {
-  int rv = find_addresses(coil_block, num_coil_blocks, first_addr, quantity);
-  return (rv >= 0);
+  return find_addresses(coil_block_list_head, first_addr, quantity);
 }
 
 
 bool Mapping::have_register_addresses(uint16_t first_addr, uint16_t quantity) const
 {
-  int rv = find_addresses(
-      register_block, num_register_blocks, first_addr, quantity);
-  return (rv >= 0);
-}
-
-
-int8_t Mapping::write_coil(uint16_t addr, bool value)
-{
-  int b0 = find_addresses(coil_block, num_coil_blocks, addr, 1);
-  if(b0 < 0)
-      return EXC_ILLEGAL_DATA_ADDRESS;
-
-  dirty = true;
-  return coil_block[b0]->write_one(addr, value);
+  return find_addresses(register_block_list_head, first_addr, quantity);
 }
 
 
 int8_t Mapping::write_coils(
     uint16_t dest_addr,
     uint8_t* src_byte,
-    uint8_t  src_bit,
     uint16_t quantity
   )
 {
-  // First check that we have all of the addresses.
-  int b0 = find_addresses(coil_block, num_coil_blocks, dest_addr, quantity);
-  if(b0 < 0)
-      return EXC_ILLEGAL_DATA_ADDRESS;
-
-  dirty = true;
-  for(size_t b=b0; b<num_coil_blocks; ++b)
-  {
-    int8_t rv =
-        coil_block[b]->write_many(dest_addr, src_byte, src_bit, quantity);
-
-    if(rv != 0  ||  quantity == 0)
-        return rv;
-  }
-  return EXC_SERVER_DEVICE_FAILURE; // Should never get here.
+  return write_many(
+      coil_block_list_head,
+      dest_addr, src_byte, quantity
+    );
 }
 
 
 int8_t Mapping::read_coils(
   uint8_t* dest_byte,
-  uint8_t  dest_bit,
   uint16_t src_addr,
   uint16_t quantity
 ) const
 {
-  // First check that we have all of the addresses.
-  int b0 = find_addresses(coil_block, num_coil_blocks, src_addr, quantity);
-  if(b0 < 0)
-      return EXC_ILLEGAL_DATA_ADDRESS;
-
-  for(size_t b=b0; b<num_coil_blocks; ++b)
-  {
-    int8_t rv =
-        coil_block[b]->read_many(dest_byte, dest_bit, src_addr, quantity);
-
-    if(rv != 0  ||  quantity == 0)
-        return rv;
-  }
-  return EXC_SERVER_DEVICE_FAILURE; // Should never get here.
+  *dest_byte = 0;
+  return read_many(
+      coil_block_list_head,
+      dest_byte, src_addr, quantity
+    );
 }
 
 
 int8_t Mapping::write_registers(
     uint16_t  dest_addr,
-    uint8_t*  src,
+    uint8_t*  src_byte,
     uint16_t  quantity)
 {
+  return write_many(
+      register_block_list_head,
+      dest_addr, src_byte, quantity
+    );
+}
+
+
+int8_t Mapping::read_registers(
+  uint8_t*  dest_byte,
+  uint16_t  src_addr,
+  uint16_t  quantity) const
+{
+  return read_many(
+      register_block_list_head,
+      dest_byte, src_addr, quantity
+    );
+}
+
+
+int8_t Mapping::write_many(
+    Block*   block,
+    uint16_t dest_addr,
+    uint8_t* src_byte,
+    uint16_t quantity
+  )
+{
   // First check that we have all of the addresses.
-  int b0 = find_addresses(register_block, num_register_blocks, dest_addr, quantity);
-  if(b0 < 0)
+  block = find_addresses(block, dest_addr, quantity);
+  if(!block)
       return EXC_ILLEGAL_DATA_ADDRESS;
 
+  Position src(src_byte);
   dirty = true;
-  for(size_t b=b0; b<num_register_blocks; ++b)
+  while(block)
   {
-    int8_t rv = register_block[b]->write_many(dest_addr, src, quantity);
-
+    int8_t rv = block->write_many(dest_addr, src, quantity);
     if(rv != 0  ||  quantity == 0)
         return rv;
+    block = block->next_block;
   }
   return EXC_SERVER_DEVICE_FAILURE; // Should never get here.
 }
 
 
-int8_t Mapping::read_registers(
-  uint8_t*  dest,
-  uint16_t  src_addr,
-  uint16_t  quantity) const
+int8_t Mapping::read_many(
+    Block*   block,
+    uint8_t* dest_byte,
+    uint16_t src_addr,
+    uint16_t quantity
+  ) const
 {
   // First check that we have all of the addresses.
-  int b0 = find_addresses(register_block, num_register_blocks, src_addr, quantity);
-  if(b0 < 0)
+  block = find_addresses(block, src_addr, quantity);
+  if(!block)
       return EXC_ILLEGAL_DATA_ADDRESS;
 
-  for(size_t b=b0; b<num_register_blocks; ++b)
+  Position dest(dest_byte);
+  while(block)
   {
-    int8_t rv = register_block[b]->read_many(dest, src_addr, quantity);
-
+    int8_t rv = block->read_many(dest, src_addr, quantity);
     if(rv != 0  ||  quantity == 0)
         return rv;
+    block = block->next_block;
   }
   return EXC_SERVER_DEVICE_FAILURE; // Should never get here.
+}
+
+
+Block* Mapping::find_addresses(
+  Block* block,
+  uint16_t first_addr, uint16_t num_addr) const
+{
+  Block* result = NULL;
+  while(block)
+  {
+    uint16_t n = block->have_address(first_addr);
+    if(n)
+    {
+      // Result refers to the block that contains the first_addr.
+      if(!result)
+          result = block;
+
+      if(n >= num_addr)
+          return result;
+
+      num_addr -= n;
+      first_addr += n;
+    }
+    else if(block->get_start_address() > first_addr)
+    {
+      // We have passed the address we are looking for - give up.
+      break;
+    }
+
+    block = block->next_block;
+  }
+  return NULL;
 }
 
 

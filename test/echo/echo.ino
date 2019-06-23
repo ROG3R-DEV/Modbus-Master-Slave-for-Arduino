@@ -34,6 +34,9 @@ Master master(master_stream,0);
 const uint8_t slave_id = 1;
 const uint16_t slave_data_count = 9;
 uint16_t slave_data[slave_data_count+1]; ///< Include extra OOB register
+CoilBlock coil_block((uint8_t*)slave_data, 16*slave_data_count);
+RegisterBlock reg_block(slave_data, slave_data_count);
+Mapping mapping;
 int8_t slave_poll_result;
 
 Loopback slave_stream(MAX_BUFFER+1);
@@ -146,7 +149,7 @@ void poll()
       slave_stream.print_status(Serial, "slave");
 #endif
 
-  slave_poll_result = slave.poll(slave_data, slave_data_count);
+  slave_poll_result = slave.poll(mapping);
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
       master_stream.print_status(Serial, "master");
       slave_stream.print_status(Serial, "slave");
@@ -445,6 +448,9 @@ void setup()
 {
   Serial.begin(115200);
   Serial.println(F(__FILE__ "  Build: " __DATE__ ", " __TIME__));
+
+  mapping.add_coil_block(coil_block);
+  mapping.add_register_block(reg_block);
 
   master_stream.connect(slave_stream);
 }

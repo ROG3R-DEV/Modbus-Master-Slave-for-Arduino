@@ -27,6 +27,14 @@ inline uint16_t bswap16(uint16_t v)
 }
 
 
+struct Position
+{
+  uint8_t* byte;
+  uint8_t  bitn;
+  Position(uint8_t* byte_): byte(byte_), bitn(0) {}
+};
+
+
 class Block
 {
 public:
@@ -47,19 +55,31 @@ public:
   /** Clear the "dirty" flag. */
   void set_clean() { dirty = false; }
 
+  virtual int8_t write_many(
+      uint16_t& dest_addr,
+      Position& src,
+      uint16_t& quantity);
+
+  virtual int8_t read_many(
+      Position& dest,
+      uint16_t& src_addr,
+      uint16_t& quantity) const;
+
+  virtual ~Block() {}
+
 private:
   Block();             ///< Class is non-default-constructable.
   Block(const Block&); ///< Class is non-copyable.
 
 protected:
-  Block(
-      uint16_t  length_,
-      uint16_t  start_address_ = 0
-    );
+  Block(uint16_t length_, uint16_t start_address_ =0);
 
-  const uint16_t  length; ///< The number of addresses in this block.
-  const uint16_t  start_address;
-  bool            dirty; ///< TRUE if data in this block has been modified.
+  Block*         next_block; ///< Collections are implemented as a linked list.
+  const uint16_t length; ///< The number of addresses in this block.
+  const uint16_t start_address;
+  bool           dirty; ///< TRUE if data in this block has been modified.
+
+  friend class Mapping;
 };
 
 
@@ -72,17 +92,13 @@ public:
       uint16_t  start_address_ = 0
     );
 
-  int8_t write_one(uint16_t addr, bool value);
-
   int8_t write_many(
       uint16_t& dest_addr,
-      uint8_t*& src_byte,
-      uint8_t&  src_bit,
+      Position& src,
       uint16_t& quantity);
 
   int8_t read_many(
-      uint8_t*& dest_byte,
-      uint8_t&  dest_bit,
+      Position& dest,
       uint16_t& src_addr,
       uint16_t& quantity) const;
 
@@ -106,11 +122,11 @@ public:
 
   int8_t write_many(
       uint16_t& dst_addr,
-      uint8_t*& src,
+      Position& src,
       uint16_t& quantity);
 
   int8_t read_many(
-      uint8_t*& dest,
+      Position& dest,
       uint16_t& src_addr,
       uint16_t& quantity) const;
 
@@ -124,10 +140,9 @@ private:
 class Mapping
 {
 public:
-  Mapping(uint16_t num_coil_blocks = 0, uint16_t num_register_blocks = 0);
-  ~Mapping();
-  int add_coil_block(CoilBlock& cb);
-  int add_register_block(RegisterBlock& rb);
+  Mapping();
+  void add_coil_block(CoilBlock& cb);
+  void add_register_block(RegisterBlock& rb);
 
   /** Return TRUE if any block has been modified. */
   bool is_dirty() const { return dirty; }
@@ -136,15 +151,11 @@ public:
   void set_clean();
 
   bool have_coil_addresses(uint16_t first_addr, uint16_t quantity =1) const;
-
   bool have_register_addresses(uint16_t first_addr, uint16_t quantity =1) const;
-
-  int8_t write_coil(uint16_t addr, bool value);
 
   int8_t write_coils(
       uint16_t dest_addr,
       uint8_t* src_byte,
-      uint8_t  src_bit,
       uint16_t quantity =1
     );
 
@@ -155,7 +166,6 @@ public:
    */
   int8_t read_coils(
       uint8_t* dest_byte,
-      uint8_t  dest_bit,
       uint16_t src_addr,
       uint16_t quantity =1
     ) const;
@@ -163,56 +173,48 @@ public:
   int8_t write_registers(
       uint16_t  dest_addr,
       uint8_t*  src,
-      uint16_t  quantity =1);
+      uint16_t  quantity =1
+    );
 
   int8_t read_registers(
       uint8_t*  dest,
       uint16_t  src_addr,
-      uint16_t  quantity =1) const;
+      uint16_t  quantity =1
+    ) const;
 
 private:
-  CoilBlock**     coil_block;
-  uint16_t        num_coil_blocks;
-  RegisterBlock** register_block;
-  uint16_t        num_register_blocks;
-  bool            dirty;
+  Block*  coil_block_list_head;
+  Block*  register_block_list_head;
+  bool    dirty;
 
+private:
   Mapping(const Mapping&); ///< Class is non-copyable.
+
+  void add_block(Block** ptr, Block& new_block);
+
+  int8_t write_many(
+      Block*   block,
+      uint16_t dest_addr,
+      uint8_t* src_byte,
+      uint16_t quantity
+    );
+
+  int8_t read_many(
+      Block*   block,
+      uint8_t* dest_byte,
+      uint16_t src_addr,
+      uint16_t quantity
+    ) const;
 
   /** Helper for implementing have_coil/register_addresses().
    *  Looks for ALL of the required address range.
    *
-   * @return  <0: not found, >=0: block num that contains first address.
+   * @return  NULL: not found, &Block: block that contains first address.
    */
-  template<typename T_Block>
-  int find_addresses(
-      const T_Block* const block, uint16_t num_blocks,
-      uint16_t first_addr, uint16_t num_addr) const
-    {
-      int result = -1;
-      for(size_t i=0; i<num_blocks; ++i)
-      {
-        uint16_t n = block[i]->have_address(first_addr);
-        if(n)
-        {
-          // Result refers to the block that contains the first_addr.
-          if(result < 0)
-              result = i;
-
-          if(n >= num_addr)
-              return result;
-
-          num_addr -= n;
-          first_addr += n;
-        }
-        else if(block[i]->get_start_address() > first_addr)
-        {
-          // We have passed the address we are looking for - give up.
-          break;
-        }
-      }
-      return -2;
-    }
+  Block* find_addresses(
+      Block* block,
+      uint16_t first_addr, uint16_t num_addr
+    ) const;
 };
 
 
