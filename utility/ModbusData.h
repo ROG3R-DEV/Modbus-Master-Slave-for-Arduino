@@ -58,18 +58,16 @@ public:
   virtual int8_t write_many(
       uint16_t& dest_addr,
       Position& src,
-      uint16_t& quantity);
+      uint16_t& quantity
+    );
 
   virtual int8_t read_many(
       Position& dest,
       uint16_t& src_addr,
-      uint16_t& quantity) const;
+      uint16_t& quantity
+    ) const;
 
   virtual ~Block() {}
-
-private:
-  Block();             ///< Class is non-default-constructable.
-  Block(const Block&); ///< Class is non-copyable.
 
 protected:
   Block(uint16_t length_, uint16_t start_address_ =0);
@@ -79,6 +77,10 @@ protected:
   const uint16_t start_address;
   bool           dirty; ///< TRUE if data in this block has been modified.
 
+private:
+  Block();                        ///< Class is non-default-constructable.
+  Block(const Block&);            ///< Class is non-copyable.
+  Block& operator=(const Block&); ///< Class is non-assignable.
   friend class Mapping;
 };
 
@@ -95,12 +97,14 @@ public:
   int8_t write_many(
       uint16_t& dest_addr,
       Position& src,
-      uint16_t& quantity);
+      uint16_t& quantity
+    );
 
   int8_t read_many(
       Position& dest,
       uint16_t& src_addr,
-      uint16_t& quantity) const;
+      uint16_t& quantity
+    ) const;
 
 private:
   uint8_t* const  data_bytes;
@@ -116,19 +120,17 @@ public:
       uint16_t  start_address_ = 0
     );
 
-  //
-  // No checks are made.
-  // The caller is assumed to have checked that the address is valid.
-
   int8_t write_many(
       uint16_t& dst_addr,
       Position& src,
-      uint16_t& quantity);
+      uint16_t& quantity
+    );
 
   int8_t read_many(
       Position& dest,
       uint16_t& src_addr,
-      uint16_t& quantity) const;
+      uint16_t& quantity
+    ) const;
 
 private:
   RegisterBlock(const RegisterBlock&); ///< Class is non-copyable.
@@ -212,8 +214,9 @@ private:
    * @return  NULL: not found, &Block: block that contains first address.
    */
   Block* find_addresses(
-      Block* block,
-      uint16_t first_addr, uint16_t num_addr
+      Block*    block,
+      uint16_t  first_addr,
+      uint16_t  num_addr
     ) const;
 };
 

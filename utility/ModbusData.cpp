@@ -7,12 +7,12 @@ namespace modbus {
 // CoilBlock
 
 Block::Block(
-  uint16_t  length_,
-  uint16_t  start_address_
-):
-  length(length_), ///< The number of coils (bits) in this block.
-  start_address(start_address_),
-  dirty(false)
+    uint16_t  length_,
+    uint16_t  start_address_
+  ):
+    length(length_), ///< The number of coils (bits) in this block.
+    start_address(start_address_),
+    dirty(false)
 {}
 
 
@@ -27,20 +27,22 @@ uint16_t Block::have_address(uint16_t addr) const
       return 0;
 }
 
+
 CoilBlock::CoilBlock(
-  uint8_t*  data_bytes_,
-  uint16_t  length_,
-  uint16_t  start_address_
-):
-  Block(length_, start_address_),
-  data_bytes(data_bytes_)
+    uint8_t*  data_bytes_,
+    uint16_t  length_,
+    uint16_t  start_address_
+  ):
+    Block(length_, start_address_),
+    data_bytes(data_bytes_)
 {}
 
 
 int8_t CoilBlock::write_many(
-  uint16_t& dest_addr,
-  Position& src,
-  uint16_t& quantity)
+    uint16_t& dest_addr,
+    Position& src,
+    uint16_t& quantity
+  )
 {
   const uint16_t offset    = dest_addr - start_address;
   uint8_t*       dest_byte = data_bytes + (offset / 8);
@@ -74,9 +76,10 @@ int8_t CoilBlock::write_many(
 
 
 int8_t CoilBlock::read_many(
-  Position& dest,
-  uint16_t& src_addr,
-  uint16_t& quantity) const
+    Position& dest,
+    uint16_t& src_addr,
+    uint16_t& quantity
+  ) const
 {
   const uint16_t offset  = src_addr - start_address;
   const uint8_t* src     = data_bytes + (offset / 8);
@@ -112,12 +115,12 @@ int8_t CoilBlock::read_many(
 // RegisterBlock
 
 RegisterBlock::RegisterBlock(
-  uint16_t* data_words_,
-  uint16_t  length_, ///< Number of registers (2-byte words) in this block.
-  uint16_t  start_address_
-):
-  Block(length_, start_address_),
-  data_words(data_words_)
+    uint16_t* data_words_,
+    uint16_t  length_, ///< Number of registers (2-byte words) in this block.
+    uint16_t  start_address_
+  ):
+    Block(length_, start_address_),
+    data_words(data_words_)
 {}
 
 
@@ -126,9 +129,10 @@ RegisterBlock::RegisterBlock(
 // The caller is assumed to have checked that the address is valid.
 
 int8_t RegisterBlock::write_many(
-  uint16_t& dst_addr,
-  Position& src,
-  uint16_t& quantity)
+    uint16_t& dst_addr,
+    Position& src,
+    uint16_t& quantity
+  )
 {
   while(quantity && (dst_addr - start_address) < length)
   {
@@ -143,9 +147,10 @@ int8_t RegisterBlock::write_many(
 
 
 int8_t RegisterBlock::read_many(
-  Position& dest,
-  uint16_t& src_addr,
-  uint16_t& quantity) const
+    Position& dest,
+    uint16_t& src_addr,
+    uint16_t& quantity
+  ) const
 {
   while(quantity && (src_addr - start_address) < length)
   {
@@ -234,48 +239,38 @@ int8_t Mapping::write_coils(
     uint16_t quantity
   )
 {
-  return write_many(
-      coil_block_list_head,
-      dest_addr, src_byte, quantity
-    );
+  return write_many(coil_block_list_head, dest_addr, src_byte, quantity);
 }
 
 
 int8_t Mapping::read_coils(
-  uint8_t* dest_byte,
-  uint16_t src_addr,
-  uint16_t quantity
-) const
+    uint8_t* dest_byte,
+    uint16_t src_addr,
+    uint16_t quantity
+  ) const
 {
   *dest_byte = 0;
-  return read_many(
-      coil_block_list_head,
-      dest_byte, src_addr, quantity
-    );
+  return read_many(coil_block_list_head, dest_byte, src_addr, quantity);
 }
 
 
 int8_t Mapping::write_registers(
     uint16_t  dest_addr,
     uint8_t*  src_byte,
-    uint16_t  quantity)
+    uint16_t  quantity
+  )
 {
-  return write_many(
-      register_block_list_head,
-      dest_addr, src_byte, quantity
-    );
+  return write_many(register_block_list_head, dest_addr, src_byte, quantity);
 }
 
 
 int8_t Mapping::read_registers(
-  uint8_t*  dest_byte,
-  uint16_t  src_addr,
-  uint16_t  quantity) const
+    uint8_t*  dest_byte,
+    uint16_t  src_addr,
+    uint16_t  quantity
+  ) const
 {
-  return read_many(
-      register_block_list_head,
-      dest_byte, src_addr, quantity
-    );
+  return read_many(register_block_list_head, dest_byte, src_addr, quantity);
 }
 
 
@@ -288,19 +283,21 @@ int8_t Mapping::write_many(
 {
   // First check that we have all of the addresses.
   block = find_addresses(block, dest_addr, quantity);
-  if(!block)
-      return EXC_ILLEGAL_DATA_ADDRESS;
-
-  Position src(src_byte);
-  dirty = true;
-  while(block)
+  if(block)
   {
-    int8_t rv = block->write_many(dest_addr, src, quantity);
-    if(rv != 0  ||  quantity == 0)
-        return rv;
-    block = block->next_block;
+    Position src(src_byte);
+    dirty = true;
+    while(block)
+    {
+      const int8_t rv = block->write_many(dest_addr, src, quantity);
+      if(rv != 0  ||  quantity == 0)
+          return rv;
+
+      block = block->next_block;
+    }
+    // Should never get here.
   }
-  return EXC_SERVER_DEVICE_FAILURE; // Should never get here.
+  return EXC_ILLEGAL_DATA_ADDRESS;
 }
 
 
@@ -313,29 +310,33 @@ int8_t Mapping::read_many(
 {
   // First check that we have all of the addresses.
   block = find_addresses(block, src_addr, quantity);
-  if(!block)
-      return EXC_ILLEGAL_DATA_ADDRESS;
-
-  Position dest(dest_byte);
-  while(block)
+  if(block)
   {
-    int8_t rv = block->read_many(dest, src_addr, quantity);
-    if(rv != 0  ||  quantity == 0)
-        return rv;
-    block = block->next_block;
+    Position dest(dest_byte);
+    while(block)
+    {
+      const int8_t rv = block->read_many(dest, src_addr, quantity);
+      if(rv != 0  ||  quantity == 0)
+          return rv;
+
+      block = block->next_block;
+    }
+    // Should never get here.
   }
-  return EXC_SERVER_DEVICE_FAILURE; // Should never get here.
+  return EXC_ILLEGAL_DATA_ADDRESS;
 }
 
 
 Block* Mapping::find_addresses(
-  Block* block,
-  uint16_t first_addr, uint16_t num_addr) const
+    Block*   block,
+    uint16_t first_addr,
+    uint16_t num_addr
+  ) const
 {
   Block* result = NULL;
   while(block)
   {
-    uint16_t n = block->have_address(first_addr);
+    const uint16_t n = block->have_address(first_addr);
     if(n)
     {
       // Result refers to the block that contains the first_addr.
@@ -353,7 +354,6 @@ Block* Mapping::find_addresses(
       // We have passed the address we are looking for - give up.
       break;
     }
-
     block = block->next_block;
   }
   return NULL;

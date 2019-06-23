@@ -445,7 +445,6 @@ uint8_t Master::getState() const
  */
 int8_t Master::query( modbus_t telegram )
 {
-    uint8_t u8regsno, u8bytesno;
     if (u8state != COM_IDLE)
         return setError(ERR_WAITING);
 
@@ -485,20 +484,12 @@ int8_t Master::query( modbus_t telegram )
         u8BufferSize = 6;
         break;
     case MB_FC_WRITE_MULTIPLE_COILS: // TODO: implement "sending coils"
-        u8regsno = telegram.u16CoilsNo / 16;
-        u8bytesno = u8regsno * 2;
-        if ((telegram.u16CoilsNo % 16) != 0)
-        {
-            u8bytesno++;
-            u8regsno++;
-        }
-
         au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
         au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
-        au8Buffer[ BYTE_CNT ]    = u8bytesno;
+        au8Buffer[ BYTE_CNT ]   = (telegram.u16CoilsNo + 7)/8;
         u8BufferSize = 7;
 
-        for (uint16_t i = 0; i < u8bytesno; i++)
+        for (uint8_t i = 0; i < au8Buffer[ BYTE_CNT ]; i++)
         {
             if(i%2)
             {
@@ -511,7 +502,6 @@ int8_t Master::query( modbus_t telegram )
             u8BufferSize++;
         }
         break;
-
     case MB_FC_WRITE_MULTIPLE_REGISTERS:
         au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
         au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
@@ -531,7 +521,7 @@ int8_t Master::query( modbus_t telegram )
         return setError(ERR_FUNC_CODE); // Unrecognised or unsupported function code.
     }
 
-    int8_t i8bytes_sent = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+    const int8_t i8bytes_sent = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
     if (i8bytes_sent < 0)
     {
         return setError(i8bytes_sent);
@@ -572,7 +562,7 @@ int8_t Master::poll()
 
     // transfer Serial buffer frame to a local buffer.
     uint8_t au8Buffer[MAX_BUFFER];
-    int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
+    const int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
     if (i8bytes_read < 0)
     {
         u8state = COM_IDLE;
@@ -581,7 +571,7 @@ int8_t Master::poll()
     uint8_t u8BufferSize = i8bytes_read;
 
     // validate message: id, CRC, FCT, exception
-    int8_t i8error = validateAnswer( au8Buffer, u8BufferSize );
+    const int8_t i8error = validateAnswer( au8Buffer, u8BufferSize );
     if (i8error != 0)
     {
         u8state = COM_IDLE;
@@ -678,7 +668,7 @@ uint8_t Slave::getID() const
 
 /**
  * @brief Backward compatibility wrapper for Slave::poll()
- * Constructs the MODBUS mapping on the fly from an array of uint16_t.
+ * Constructs a basic MODBUS mapping on the fly from an array of uint16_t.
  *
  * @param *regs  register table for communication exchange
  * @param u8size  size of the register table
@@ -713,7 +703,7 @@ int8_t Slave::poll( Mapping& mapping )
         return 0;
 
     uint8_t au8Buffer[MAX_BUFFER];
-    int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
+    const int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
     if (i8bytes_read < 0)
     {
         return setError(i8bytes_read); // Pass error on from getRxBuffer().
@@ -978,7 +968,7 @@ int8_t Base::setError( int8_t i8error )
 bool Base::rxFrameReady()
 {
     // Check if there is any incoming frame.
-    int bytesAvailable = port->available();
+    const int bytesAvailable = port->available();
     if (bytesAvailable > 0)
     {
         const unsigned long now = millis();
@@ -1012,12 +1002,12 @@ bool Base::rxFrameReady()
  * This method moves Serial buffer data to out local buffer.
  *
  * @param buf     buffer into which the message should be read.
- * @param count   length of data buffer, in bytes.
+ * @param bufsize capacity of buffer, in bytes.
  * @return buffer message length if OK,
  *                  ERR_RX_BUFF_OVERFLOW if message is larger than size
  * @ingroup buffer
  */
-int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
+int8_t Base::getRxBuffer( uint8_t* buf, uint8_t bufsize )
 {
     // Pre-condition: We know that (port->available() > 0), because
     // rxFrameReady() has returned TRUE.
@@ -1025,8 +1015,8 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
     uint8_t i = 0;
     while(true)
     {
-      int c = port->read();
-      if (i < count)
+      const int c = port->read();
+      if (i < bufsize)
       {
         if (c < 0)
             break;
@@ -1053,21 +1043,20 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t count )
  *
  * @param  buf     data buffer.
  * @param  count   message length.
- * @param  size    capacity of buffer in bytes.
+ * @param  bufsize capacity of buffer in bytes.
  * @return         O: OK, ERR_TX_BUFF_OVERFLOW: buffer overflow
  * @ingroup buffer
  */
-int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
+int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
 {
     // append CRC to message
-    if (count+2 > size)
+    if (count+2 > bufsize)
     {
         return ERR_TX_BUFF_OVERFLOW;
     }
-    uint16_t u16crc = calcCRC( buf, count );
+    const uint16_t u16crc = calcCRC( buf, count );
     buf[ count   ] = u16crc >> 8;
     buf[ count+1 ] = u16crc & 0x00ff;
-    count += 2;
 
     if (u8txenpin > 1)
     {
@@ -1076,7 +1065,7 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size )
     }
 
     // transfer buffer to serial line
-    port->write( buf, count );
+    port->write( buf, count+2 );
 
     if (u8txenpin > 1)
     {
@@ -1142,15 +1131,13 @@ uint16_t Base::calcCRC(const uint8_t* data, uint8_t len) const
  */
 int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
 {
-    if (count <= 2)
+    if (count < 5) // Exception is 3 bytes + 2 bytes CRC.
     {
         return ERR_MALFORMED_MESSAGE;
     }
 
     // check message crc vs calculated crc
-    uint16_t u16MsgCRC =
-        ((buf[count - 2] << 8)
-         | buf[count - 1]); // combine the crc Low & High bytes
+    const uint16_t u16MsgCRC = word( buf[count - 2], buf[count - 1] );
     if ( calcCRC( buf, count-2 ) != u16MsgCRC )
     {
         return ERR_BAD_CRC;
@@ -1166,7 +1153,7 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
     }
 
     // Check for minimum message size.
-    if (count < 6) //7 was incorrect for functions 1 and 2 the smallest frame could be 6 bytes long
+    if (count < 6) // FC 1 & 2: smallest response is 4 bytes + 2 bytes CRC
     {
         return ERR_MALFORMED_MESSAGE;
     }
@@ -1248,14 +1235,10 @@ void Master::get_FC3( const uint8_t* buf, uint8_t /*count*/ )
 int8_t Slave::validateRequest( const uint8_t* buf, uint8_t count ) const
 {
     if (count <= 3)
-    {
         return ERR_MALFORMED_MESSAGE;
-    }
 
     // check message crc vs calculated crc
-    uint16_t u16MsgCRC =
-        ((buf[count - 2] << 8)
-         | buf[count - 1]); // combine the crc Low & High bytes
+    const uint16_t u16MsgCRC = word( buf[count - 2], buf[count - 1] );
     if ( calcCRC( buf, count-2 ) != u16MsgCRC )
     {
         return ERR_BAD_CRC;
@@ -1294,8 +1277,8 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
     if (count != 8)
         return ERR_MALFORMED_MESSAGE;
 
-    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
 
     // Set the message size.
     buf[ 2 ] = (quantity+7)/8;
@@ -1324,8 +1307,8 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
     if (count != 8)
         return ERR_MALFORMED_MESSAGE;
 
-    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
 
     // Set the message size.
     buf[ 2 ] = quantity * 2;
@@ -1354,8 +1337,8 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count != 8)
         return ERR_MALFORMED_MESSAGE;
 
-    uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t value = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t value = word( buf[ NB_HI  ], buf[ NB_LO  ] );
 
     // Validate the value.
     if(value != 0x0000  &&  value != 0xFF00)
@@ -1383,7 +1366,7 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count != 8)
         return ERR_MALFORMED_MESSAGE;
 
-    uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t addr = word( buf[ ADD_HI ], buf[ ADD_LO ] );
 
     // Response is just the first 6 bytes of the request.
     count = 6;
@@ -1407,9 +1390,9 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count < 10)
         return ERR_MALFORMED_MESSAGE;
 
-    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
-    uint8_t  n        = buf[ 6 ];
+    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint8_t  n        = buf[ 6 ];
 
     // Validate the quantity.
     if(0 == quantity || quantity > 0x7B0 || n != (quantity+7)/8)
@@ -1440,9 +1423,9 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count < 11)
         return ERR_MALFORMED_MESSAGE;
 
-    uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
-    uint8_t  n        = buf[ 6 ];
+    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint8_t  n        = buf[ 6 ];
 
     // Validate the quantity.
     if(0 == quantity || quantity > 0x7B || n != quantity*2)
