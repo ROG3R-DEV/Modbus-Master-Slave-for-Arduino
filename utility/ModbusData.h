@@ -94,6 +94,12 @@ public:
       uint16_t  start_address_ = 0
     );
 
+  CoilBlock(
+      uint16_t* data_words_,
+      uint16_t  length_,
+      uint16_t  start_address_ = 0
+    );
+
   int8_t write_many(
       uint16_t& dest_addr,
       Position& src,
@@ -143,8 +149,11 @@ class Mapping
 {
 public:
   Mapping();
-  void add_coil_block(CoilBlock& cb);
+  Mapping(RegisterBlock& rb);
+  Mapping(RegisterBlock& rb, CoilBlock& cb);
+
   void add_register_block(RegisterBlock& rb);
+  void add_coil_block(CoilBlock& cb);
 
   /** Return TRUE if any block has been modified. */
   bool is_dirty() const { return dirty; }
@@ -152,8 +161,20 @@ public:
   /** Clear the "dirty" flag. */
   void set_clean();
 
-  bool have_coil_addresses(uint16_t first_addr, uint16_t quantity =1) const;
   bool have_register_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+  bool have_coil_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+
+  int8_t write_registers(
+      uint16_t  dest_addr,
+      uint8_t*  src,
+      uint16_t  quantity =1
+    );
+
+  int8_t read_registers(
+      uint8_t*  dest,
+      uint16_t  src_addr,
+      uint16_t  quantity =1
+    ) const;
 
   int8_t write_coils(
       uint16_t dest_addr,
@@ -172,21 +193,9 @@ public:
       uint16_t quantity =1
     ) const;
 
-  int8_t write_registers(
-      uint16_t  dest_addr,
-      uint8_t*  src,
-      uint16_t  quantity =1
-    );
-
-  int8_t read_registers(
-      uint8_t*  dest,
-      uint16_t  src_addr,
-      uint16_t  quantity =1
-    ) const;
-
 private:
-  Block*  coil_block_list_head;
   Block*  register_block_list_head;
+  Block*  coil_block_list_head;
   bool    dirty;
 
 private:

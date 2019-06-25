@@ -38,6 +38,16 @@ CoilBlock::CoilBlock(
 {}
 
 
+CoilBlock::CoilBlock(
+    uint16_t* data_words_,
+    uint16_t  length_,
+    uint16_t  start_address_
+  ):
+    Block(length_, start_address_),
+    data_bytes((uint8_t*)data_words_)
+{}
+
+
 int8_t CoilBlock::write_many(
     uint16_t& dest_addr,
     Position& src,
@@ -169,8 +179,20 @@ int8_t RegisterBlock::read_many(
 // Mapping
 
 Mapping::Mapping():
-  coil_block_list_head(NULL),
-  register_block_list_head(NULL)
+  register_block_list_head(NULL),
+  coil_block_list_head(NULL)
+{}
+
+
+Mapping::Mapping(RegisterBlock& rb):
+  register_block_list_head(&rb),
+  coil_block_list_head(NULL)
+{}
+
+
+Mapping::Mapping(RegisterBlock& rb, CoilBlock& cb):
+  register_block_list_head(&rb),
+  coil_block_list_head(&cb)
 {}
 
 
@@ -191,27 +213,27 @@ void Mapping::add_block(Block** ptr, Block& new_block)
 }
 
 
-void Mapping::add_coil_block(CoilBlock& cb)
-{
-  add_block(&coil_block_list_head, cb);
-}
-
-
 void Mapping::add_register_block(RegisterBlock& rb)
 {
   add_block(&register_block_list_head, rb);
 }
 
 
+void Mapping::add_coil_block(CoilBlock& cb)
+{
+  add_block(&coil_block_list_head, cb);
+}
+
+
 void Mapping::set_clean()
 {
-  Block* block = coil_block_list_head;
+  Block* block = register_block_list_head;
   while(block)
   {
     block->set_clean();
     block = block->next_block;
   }
-  block = register_block_list_head;
+  block = coil_block_list_head;
   while(block)
   {
     block->set_clean();
@@ -221,15 +243,35 @@ void Mapping::set_clean()
 }
 
 
+bool Mapping::have_register_addresses(uint16_t first_addr, uint16_t quantity) const
+{
+  return find_addresses(register_block_list_head, first_addr, quantity);
+}
+
+
 bool Mapping::have_coil_addresses(uint16_t first_addr, uint16_t quantity) const
 {
   return find_addresses(coil_block_list_head, first_addr, quantity);
 }
 
 
-bool Mapping::have_register_addresses(uint16_t first_addr, uint16_t quantity) const
+int8_t Mapping::write_registers(
+    uint16_t  dest_addr,
+    uint8_t*  src_byte,
+    uint16_t  quantity
+  )
 {
-  return find_addresses(register_block_list_head, first_addr, quantity);
+  return write_many(register_block_list_head, dest_addr, src_byte, quantity);
+}
+
+
+int8_t Mapping::read_registers(
+    uint8_t*  dest_byte,
+    uint16_t  src_addr,
+    uint16_t  quantity
+  ) const
+{
+  return read_many(register_block_list_head, dest_byte, src_addr, quantity);
 }
 
 
@@ -251,26 +293,6 @@ int8_t Mapping::read_coils(
 {
   *dest_byte = 0;
   return read_many(coil_block_list_head, dest_byte, src_addr, quantity);
-}
-
-
-int8_t Mapping::write_registers(
-    uint16_t  dest_addr,
-    uint8_t*  src_byte,
-    uint16_t  quantity
-  )
-{
-  return write_many(register_block_list_head, dest_addr, src_byte, quantity);
-}
-
-
-int8_t Mapping::read_registers(
-    uint8_t*  dest_byte,
-    uint16_t  src_addr,
-    uint16_t  quantity
-  ) const
-{
-  return read_many(register_block_list_head, dest_byte, src_addr, quantity);
 }
 
 
