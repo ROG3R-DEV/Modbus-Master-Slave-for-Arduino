@@ -149,11 +149,8 @@ class Mapping
 {
 public:
   Mapping();
-  Mapping(RegisterBlock& rb);
-  Mapping(RegisterBlock& rb, CoilBlock& cb);
-
-  void add_register_block(RegisterBlock& rb);
-  void add_coil_block(CoilBlock& cb);
+  Mapping(RegisterBlock& holding_register_block);
+  Mapping(RegisterBlock& holding_register_block, CoilBlock& coil_block);
 
   /** Return TRUE if any block has been modified. */
   bool is_dirty() const { return dirty; }
@@ -161,47 +158,59 @@ public:
   /** Clear the "dirty" flag. */
   void set_clean();
 
-  bool have_register_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+  //
+  // Coils (read/write boolean values).
+
+  void add_coil_block(CoilBlock& cb);
   bool have_coil_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+  int8_t write_coils(uint16_t dest_addr, uint8_t* src_byte, uint16_t quantity =1);
+  int8_t read_coils(uint8_t* dest_byte, uint16_t src_addr, uint16_t quantity =1) const;
 
-  int8_t write_registers(
-      uint16_t  dest_addr,
-      uint8_t*  src,
-      uint16_t  quantity =1
-    );
+  //
+  // Discrete inputs (read-only boolean values).
 
-  int8_t read_registers(
-      uint8_t*  dest,
-      uint16_t  src_addr,
-      uint16_t  quantity =1
-    ) const;
+  void add_discrete_input_block(CoilBlock& cb);
+  bool have_discrete_input_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+  int8_t read_discrete_inputs(uint8_t* dest_byte, uint16_t src_addr, uint16_t quantity =1) const;
 
-  int8_t write_coils(
-      uint16_t dest_addr,
-      uint8_t* src_byte,
-      uint16_t quantity =1
-    );
+  //
+  // Input registers (read-only 16-bit words).
 
-  /** Also used for reading "discrete inputs"
-   *  (MODBUS terminology for read-only booleans).
-   *
-   * @return  0: success, <0: internal error, >0: MODBUS exception
-   */
-  int8_t read_coils(
-      uint8_t* dest_byte,
-      uint16_t src_addr,
-      uint16_t quantity =1
-    ) const;
+  void add_input_register_block(RegisterBlock& rb);
+  bool have_input_register_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+  int8_t write_input_registers(uint16_t dest_addr, uint8_t* src, uint16_t quantity =1);
+  int8_t read_input_registers(uint8_t* dest, uint16_t src_addr, uint16_t quantity =1) const;
+
+  //
+  // Holding registers (read/write 16-bit words).
+
+  void add_holding_register_block(RegisterBlock& rb);
+  bool have_holding_register_addresses(uint16_t first_addr, uint16_t quantity =1) const;
+  int8_t write_holding_registers(uint16_t dest_addr, uint8_t* src, uint16_t quantity =1);
+  int8_t read_holding_registers(uint8_t* dest, uint16_t src_addr, uint16_t quantity =1) const;
 
 private:
-  Block*  register_block_list_head;
   Block*  coil_block_list_head;
+  Block*  discrete_input_block_list_head;
+  Block*  input_register_block_list_head;
+  Block*  holding_register_block_list_head;
   bool    dirty;
 
 private:
   Mapping(const Mapping&); ///< Class is non-copyable.
 
   void add_block(Block** ptr, Block& new_block);
+
+  /** Helper for implementing have_coil/register_addresses().
+   *  Looks for ALL of the required address range.
+   *
+   * @return  NULL: not found, &Block: block that contains first address.
+   */
+  Block* find_addresses(
+      Block*    block,
+      uint16_t  first_addr,
+      uint16_t  num_addr
+    ) const;
 
   int8_t write_many(
       Block*   block,
@@ -215,17 +224,6 @@ private:
       uint8_t* dest_byte,
       uint16_t src_addr,
       uint16_t quantity
-    ) const;
-
-  /** Helper for implementing have_coil/register_addresses().
-   *  Looks for ALL of the required address range.
-   *
-   * @return  NULL: not found, &Block: block that contains first address.
-   */
-  Block* find_addresses(
-      Block*    block,
-      uint16_t  first_addr,
-      uint16_t  num_addr
     ) const;
 };
 

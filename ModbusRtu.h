@@ -1287,7 +1287,10 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Read the requested values into buf[3] onwards.
-    return mapping.read_coils(buf + 3, addr, quantity);
+    if (buf[ FUNC ] == MB_FC_READ_COILS)
+        return mapping.read_coils(buf + 3, addr, quantity);
+    else // MB_FC_READ_DISCRETE_INPUT
+        return mapping.read_discrete_inputs(buf + 3, addr, quantity);
 }
 
 
@@ -1317,7 +1320,10 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Read the requested values into buf[3] onwards.
-    return mapping.read_registers(buf + 3, addr, quantity);
+    if (buf[ FUNC ] == MB_FC_READ_INPUT_REGISTER)
+        return mapping.read_input_registers(buf + 3, addr, quantity);
+    else
+        return mapping.read_holding_registers(buf + 3, addr, quantity);
 }
 
 
@@ -1370,7 +1376,7 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
     count = 6;
 
     // Set addr = value.
-    return mapping.write_registers(addr, buf + NB_HI);
+    return mapping.write_holding_registers(addr, buf + NB_HI);
 }
 
 
@@ -1436,7 +1442,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
     count = 6;
 
     // Write the requested values from buf[7] onwards.
-    return mapping.write_registers(addr, buf + 7, quantity);
+    return mapping.write_holding_registers(addr, buf + 7, quantity);
 }
 
 
