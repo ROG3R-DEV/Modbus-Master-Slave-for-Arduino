@@ -16,6 +16,10 @@
 // Set to higher numbers for increasing levels of detail.
 #define VERBOSE_RESULTS 0
 
+uint16_t test_count =0;
+uint16_t pass_count =0;
+
+
 //
 // Master
 
@@ -81,11 +85,21 @@ void report(const char* type, uint16_t addr, uint16_t val, uint16_t expected)
 }
 void pass(const char* type, uint16_t addr, uint16_t val, uint16_t expected)
 {
+  ++test_count;
+  ++pass_count;
+#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=1)
   Serial.print(F("PASS "));
   report(type, addr, val, expected);
+#else
+  (void)type;
+  (void)addr;
+  (void)val;
+  (void)expected;
+#endif
 }
 void fail(const char* type, uint16_t addr, uint16_t val, uint16_t expected)
 {
+  ++test_count;
   Serial.print(F("FAIL "));
   report(type, addr, val, expected);
 }
@@ -94,10 +108,8 @@ void test_equal(const char* type, uint16_t addr, uint16_t val, uint16_t expected
 {
   if(val!=expected)
       fail(type, addr, val, expected);
-#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=1)
   else
       pass(type, addr, val, expected);
-#endif
 }
 
 uint16_t addr2word(uint16_t addr)
@@ -140,6 +152,14 @@ void init_slave()
 #endif
 }
 
+struct Expect {
+  int8_t slave;
+  int8_t master;
+  
+  Expect(): slave(0), master(0) {}
+  void reset() { slave=0; master=0; }
+  void set_all(int8_t v) { slave=v; master=v; }
+} expect;
 
 /** Poll both master and slave. */
 void poll()
@@ -155,11 +175,33 @@ void poll()
       slave_stream.print_status(Serial, "slave");
 #endif
 
+  if(slave_poll_result && slave_poll_result != expect.slave)
+  {
+    Serial.print(F("Unexpected slave::poll()=")); Serial.print(slave_poll_result);
+    if(slave_poll_result == ERR_EXCEPTION)
+    {
+      Serial.print(F(" last:"));
+      Serial.print(slave.getLastError());
+    }
+    Serial.println("");
+  }
+
   master_poll_result = master.poll();
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
       master_stream.print_status(Serial, "master");
       slave_stream.print_status(Serial, "slave");
 #endif
+
+  if(master_poll_result<0 && master_poll_result != expect.master)
+  {
+    Serial.print(F("Unexpected master::poll()=")); Serial.print(master_poll_result);
+    if(master_poll_result == ERR_EXCEPTION)
+    {
+      Serial.print(F(" last:"));
+      Serial.print(master.getLastError());
+    }
+    Serial.println("");
+  }
 
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=2)
       Serial.print(F("  poll: slave=")); Serial.print(slave_poll_result);
@@ -171,6 +213,8 @@ void poll()
       Serial.print(F(" last:")); Serial.print(master.getLastError());
       Serial.println("");
 #endif
+  if(master.getState()!=COM_WAITING)
+      expect.reset();
 }
 
 
@@ -229,6 +273,7 @@ void test_oob_holding_register()
 
   slave.clearLastError();
   master.clearLastError();
+  expect.set_all(ERR_EXCEPTION);
   uint16_t val = read_holding_register(slave_data_count);
   test_equal(
       "test_oob_holding_register, non-existent",
@@ -261,6 +306,7 @@ void test_oob_holding_register()
   slave.clearLastError();
   master.clearLastError();
   uint16_t new_val = 0xBAD;
+  expect.set_all(ERR_EXCEPTION);
   write_holding_register(slave_data_count, new_val);
   test_equal(
       "test_oob_holding_register, OOB write check",
@@ -364,6 +410,7 @@ void test_coils()
   // Currently FAILS, because the slave does not check its bounds.
   slave.clearLastError();
   master.clearLastError();
+  expect.set_all(ERR_EXCEPTION);
   read_coil(slave_data_count*16);
   test_equal("test_coils, non-existent",0,master.getErrCnt(),errcnt0+1);
   test_equal(
@@ -425,7 +472,82 @@ void test_multiple_registers()
       test_equal("test_multiple_registers, write", test_id, crc1, crc0);
     }
   }
-  test_equal("test_multiple_registers",0,master.getErrCnt(),errcnt0);
+  test_equal("test_multiple_registers, master errCnt",0,master.getErrCnt(),errcnt0);
+}
+
+
+bool getBitN(uint8_t* data, uint16_t n)
+{
+  uint8_t byte = data[n/8];
+  return byte & (1<<(n%8));
+}
+
+
+void test_equal_bits(const char* type, uint16_t testno, uint16_t quantity, uint8_t* d0, uint8_t* d1, uint8_t d1_offset)
+{
+  for(uint16_t q=0; q<quantity; ++q)
+  {
+    bool v0 = getBitN(d0,q);
+    bool v1 = getBitN(d1,q+d1_offset);
+    if(v0 != v1)
+    {
+      fail(type, testno, q, v1);
+      return;
+    }
+  }
+  pass(type, testno, 0, 0);
+}
+
+
+/** Read/write multiple coils. */
+void test_multiple_coils()
+{
+  const uint16_t errcnt0 = master.getErrCnt();
+  const uint16_t max_num = 16*min(slave_data_count, master_data_count);
+  uint16_t test_id = 0;
+  for(uint16_t num=2; num<max_num; num+=3)
+  {
+    for(uint16_t reg_addr=0; (reg_addr+num) < 16*slave_data_count; reg_addr+=3)
+    {
+      telegram.u8fct = MB_FC_WRITE_MULTIPLE_COILS;
+      telegram.u16RegAdd = reg_addr;
+      telegram.u16CoilsNo = num;
+      uint8_t num_bytes = (num+7)/8;
+      fill_array_with_test_data(telegram.au16reg, num_bytes);
+
+#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
+      Serial.write((uint8_t*)(telegram.au16reg), num_bytes);
+      Serial.println("");
+#endif
+
+      // Clear the slave data.
+      memset(slave_data, 0, slave_data_count+1);
+
+      master.query( telegram );
+      while(master.getState()==COM_WAITING)
+      {
+        poll();
+      }
+      // Master::query() uses the data in telegram.au16reg in an ideosyncratic
+      // way. Swap byte pairs so that it matches the expected output.
+      for(size_t w=0; w<master_data_count+1; ++w)
+          telegram.au16reg[w] = bswap16(telegram.au16reg[w]);
+
+#if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
+      for(size_t i=0; i<slave_data_count+1; ++i)
+      {
+        Serial.print(((uint8_t*)slave_data)[i], HEX);
+        Serial.print(" ");
+      }
+      Serial.println("");
+#endif
+
+      // Check that the slave data has been set correctly.
+      ++test_id;
+      test_equal_bits("test_multiple_coils, write", test_id, num, (uint8_t*)(telegram.au16reg), (uint8_t*)slave_data, reg_addr);
+    }
+  }
+  test_equal("test_multiple_coils, master errCnt",0,master.getErrCnt(),errcnt0);
 }
 
 
@@ -460,6 +582,7 @@ long delay_seconds = 1;
 
 void loop()
 {
+  test_count = pass_count = 0;
   init_master();
 
   // Reset counters
@@ -475,10 +598,14 @@ void loop()
   test_coils();
 
   test_multiple_registers();
+  test_multiple_coils();
 
   test_equal("master error count", 0, master.getErrCnt(), 3);
 
-  Serial.println(F("OK"));
+  Serial.print(F("DONE. Passed "));
+  Serial.print(pass_count);
+  Serial.print(F(" / "));
+  Serial.println(test_count);
   delay((delay_seconds++)*1000);
 }
 
