@@ -1,7 +1,7 @@
 /**
  *  Modbus slave example 2:
  *  The purpose of this example is to link the Arduino digital and analog
- *	pins to an external device.
+ *  pins to an external device.
  *
  *  Recommended Modbus Master: QModbus
  *  http://qmodbus.sourceforge.net/
@@ -9,121 +9,214 @@
  *  Editado al espa帽ol por LuxARTS
  */
 
-//Incluye la librer铆a del protocolo Modbus
+// ES: Incluye la librer铆a del protocolo Modbus
+// EN: Include the MODBUS protocol library.
 #include <ModbusRtu.h>
 #define ID   1
 
-//Crear instancia
-Modbus slave(ID, Serial, 0); //ID del nodo. 0 para el master, 1-247 para esclavo
-                        //Puerto serie (0 = TX: 1 - RX: 0)
-                        //Protocolo serie. 0 para RS-232 + USB (default), cualquier pin mayor a 1 para RS-485
-boolean led;
-int8_t state = 0;
+// ES: Crear instancia
+//     - ID del nodo (1-247 para esclavo)
+//     - Puerto serie
+//     - Protocolo serie. 0 para RS-232 + USB (default), cualquier pin mayor a 1 para RS-485
+//
+// EN: Create the slave instance.
+//     - Node ID (1-247 for slaves)
+//     - Serial port
+//     - Serial protocol. 0 for RS-232 + USB (default), any pin greater than 1 for RS-485
+Slave slave(ID, Serial, 0);
+
 unsigned long tempus;
 
-uint16_t au16data[9]; //La tabla de registros que se desea compartir por la red
+
+// ES: La tabla de registros que se desea compartir por la red
+// EN: The table of records that you want to share over the network
+uint8_t coil[1];
+CoilBlock coil_block(coil, 4, 0);
+
+uint8_t discrete_input[1];
+CoilBlock discrete_input_block(discrete_input, 4, 10000);
+
+uint16_t input_register[2];
+RegisterBlock input_register_block(input_register, 2, 30000);
+
+uint16_t diagnostic_register[3];
+RegisterBlock diagnostic_register_block(diagnostic_register, 3, 31000);
+
+uint16_t holding_register[2];
+RegisterBlock holding_register_block(holding_register, 2, 40000);
+
+Mapping mapping;
+
 
 /*********************************************************
- Configuraci贸n del programa
+
+  Use               Pins      Type              Addresses     Read  Write
+  ----------------  --------  ----------------  -----------   ----  -----
+  Digital output    2,3,4,5   coil              0..3          FC:1  FC:5,15
+  Digital input     6,7,8,9   discrete input    10000..10003  FC:2  -
+  Analogue input    A0,A1     input register    30000..30001  FC:4  -
+  Diagnostics       -         input register    31000..31002  FC:4  -
+  Analogue output   10,11     holding register  40000..40001  FC:3  FC:6,16
+
+ ES: pin 13 (LED_BUILTIN) reservado para ver el estado de la comunicaci贸n
+ EN: pin 13 (LED_BUILTIN) reserved for comms status display.
+
 *********************************************************/
-void setup() {
-  io_setup(); //configura las entradas y salidas
+void setup_mapping() {
+  // "coil"
+  mapping.add_coil_block(coil_block);
+  pinMode(2, OUTPUT);
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  digitalWrite(2, LOW);
+  digitalWrite(3, LOW);
+  digitalWrite(4, LOW);
+  digitalWrite(5, LOW);
 
-  Serial.begin(19200); //Abre la comunicaci贸n como esclavo
-  slave.start();
-  tempus = millis() + 100; //Guarda el tiempo actual + 100ms
-  digitalWrite(13, HIGH ); //Prende el led del pin 13 (el de la placa)
-}
+  // "discrete input"
+  mapping.add_discrete_input_block(discrete_input_block);
+  pinMode(6, INPUT);
+  pinMode(7, INPUT);
+  pinMode(8, INPUT);
+  pinMode(9, INPUT);
 
-/*********************************************************
- Inicio del programa
-*********************************************************/
-void loop() {
-  //Comprueba el buffer de entrada
-  state = slave.poll( au16data, 9 ); //Par谩metros: Tabla de registros para el intercambio de info
-                                     //            Tama帽o de la tabla de registros
-                                     //Devuelve 0 si no hay pedido de datos
-                                     //Devuelve 1 al 4 si hubo error de comunicaci贸n
-                                     //Devuelve mas de 4 si se proces贸 correctamente el pedido
+  // "input register"
+  mapping.add_input_register_block(input_register_block);
+  mapping.add_input_register_block(diagnostic_register_block);
 
-  if (state > 4) { //Si es mayor a 4 = el pedido fu茅 correcto
-    tempus = millis() + 50; //Tiempo actual + 50ms
-    digitalWrite(13, HIGH);//Prende el led
-  }
-  if (millis() > tempus) digitalWrite(13, LOW );//Apaga el led 50ms despu茅s
-  
-  //Actualiza los pines de Arduino con la tabla de Modbus
-  io_poll();
-} 
-
-/**
- * pin maping:
- * 2 - digital input
- * 3 - digital input
- * 4 - digital input
- * 5 - digital input
- * 6 - digital output
- * 7 - digital output
- * 8 - digital output
- * 9 - digital output
- * 10 - analog output
- * 11 - analog output
- * 14 - analog input
- * 15 - analog input
- *
- * pin 13 reservado para ver el estado de la comunicaci贸n
- */
-void io_setup() {
-  pinMode(2, INPUT);
-  pinMode(3, INPUT);
-  pinMode(4, INPUT);
-  pinMode(5, INPUT);
-  pinMode(6, OUTPUT);
-  pinMode(7, OUTPUT);
-  pinMode(8, OUTPUT);
-  pinMode(9, OUTPUT);
+  // "holding register"
+  mapping.add_holding_register_block(holding_register_block);
   pinMode(10, OUTPUT);
   pinMode(11, OUTPUT);
-  pinMode(13, OUTPUT);
-
-  digitalWrite(6, LOW );
-  digitalWrite(7, LOW );
-  digitalWrite(8, LOW );
-  digitalWrite(9, LOW );
-  digitalWrite(13, HIGH ); //Led del pin 13 de la placa
-  analogWrite(10, 0 ); //PWM 0%
-  analogWrite(11, 0 ); //PWM 0%
+  analogWrite(10, 0); // PWM 0%
+  analogWrite(11, 0); // PWM 0%
 }
 
+
 /*********************************************************
-Enlaza la tabla de registros con los pines
+ ES: Enlaza la tabla de registros con los pines
+ EN: Link the table of records with the pins.
 *********************************************************/
-void io_poll() {
-  // digital inputs -> au16data[0]
-  // Lee las entradas digitales y las guarda en bits de la primera variable del vector
-  // (es lo mismo que hacer una m谩scara)
-  bitWrite( au16data[0], 0, digitalRead( 2 )); //Lee el pin 2 de Arduino y lo guarda en el bit 0 de la variable au16data[0] 
-  bitWrite( au16data[0], 1, digitalRead( 3 ));
-  bitWrite( au16data[0], 2, digitalRead( 4 ));
-  bitWrite( au16data[0], 3, digitalRead( 5 ));
+void mapping_poll() {
+  // ES: Lee los bits 0..3 de la variable y los pone en las salidas digitales.
+  // EN: Read bits 0..3 of the data array, and write them to the digital outputs.
+  if (coil_block.is_dirty()) {
+      digitalWrite( 2, bitRead( coil[0], 0 ) );
+      digitalWrite( 3, bitRead( coil[0], 1 ) );
+      digitalWrite( 4, bitRead( coil[0], 2 ) );
+      digitalWrite( 5, bitRead( coil[0], 3 ) );
+  }
 
-  // digital outputs -> au16data[1]
-  // Lee los bits de la segunda variable y los pone en las salidas digitales
-  digitalWrite( 6, bitRead( au16data[1], 0 )); //Lee el bit 0 de la variable au16data[1] y lo pone en el pin 6 de Arduino
-  digitalWrite( 7, bitRead( au16data[1], 1 ));
-  digitalWrite( 8, bitRead( au16data[1], 2 ));
-  digitalWrite( 9, bitRead( au16data[1], 3 ));
+  // ES: Lee las entradas digitales y las guarda en bits de la primera variable
+  //     del vector (es lo mismo que hacer una m谩scara).
+  // EN: Read the digital inputs and save them in bits 0..3 of the data array.
+  //     (Like making a mask.)
+  bitWrite( discrete_input[0], 0, digitalRead( 6 ) );
+  bitWrite( discrete_input[0], 1, digitalRead( 7 ) );
+  bitWrite( discrete_input[0], 2, digitalRead( 8 ) );
+  bitWrite( discrete_input[0], 3, digitalRead( 9 ) );
 
-  // Cambia el valor del PWM
-  analogWrite( 10, au16data[2] ); //El valor de au16data[2] se escribe en la salida de PWM del pin 10 de Arduino. (siendo 0=0% y 255=100%)
-  analogWrite( 11, au16data[3] );
+  // ES: Lee las entradas anal贸gicas (ADC).
+  // EN: Read the analogue inputs (ADC).
+  input_register[0] = analogRead( A0 ); // 0 -> 0V .. 1023 -> 5V
+  input_register[1] = analogRead( A1 );
 
-  // Lee las entradas anal贸gicas (ADC)
-  au16data[4] = analogRead( 0 ); //El valor anal贸gico leido en el pin A0 se guarda en au16data[4]. (siendo 0=0v y 1023=5v)
-  au16data[5] = analogRead( 1 );
+  // ES: Diagn贸stico de la comunicaci贸n (para debug)
+  // EN: Comms diagnostics (for debug).
+  diagnostic_register[0] = slave.getInCnt();
+  diagnostic_register[1] = slave.getOutCnt();
+  diagnostic_register[2] = slave.getErrCnt();
 
-  // Diagn贸stico de la comunicaci贸n (para debug)
-  au16data[6] = slave.getInCnt();  //Devuelve cuantos mensajes se recibieron
-  au16data[7] = slave.getOutCnt(); //Devuelve cuantos mensajes se transmitieron
-  au16data[8] = slave.getErrCnt(); //Devuelve cuantos errores hubieron
+  // ES: Cambia el valor del PWM
+  // EN: Set the level of the PWN outputs.
+  if (holding_register_block.is_dirty()) {
+      analogWrite( 10, holding_register[0] ); // 0 -> 0% .. 255 -> 100%
+      analogWrite( 11, holding_register[1] );
+  }
+
+  // ES: Borra el bit "dirty" (sucio).
+  // EN: Clear the "dirty" flag.
+  mapping.set_clean();
+}
+
+
+/*********************************************************
+  ES: Utilidad de parpadeo de LED, usada para reportar errores.
+  EN: LED blinking utility, used for error reporting.
+*********************************************************/
+void blink(int8_t times, int delay_ms) {
+  pinMode( LED_BUILTIN, OUTPUT );
+  for (int8_t i=0; i<times; ++i) {
+      digitalWrite( LED_BUILTIN, HIGH );
+      delay( delay_ms );
+      digitalWrite( LED_BUILTIN, LOW );
+      delay( delay_ms );
+  }
+}
+
+
+/*********************************************************
+  ES: Reporte el estado de error parpadeando el LED incorporado.
+      N鷐ero de destellos cortos = estado de error interno.
+      N鷐ero de destellos largos = n鷐ero de excepci髇.
+
+  EN: Report error status by blinking the built-in LED.
+      Number of short flashes = internal error state.
+      Number of long flashes = exception number.
+*********************************************************/
+void report_error(int8_t err) {
+  // ES: Los c骴igos de error internos son negativos. (ERR_XXX)
+  // EN: Internal error codes are negative. (ERR_XXX)
+  if (err < 0) {
+      // ES: Parpadea el LED "err" veces, r醦ido.
+      // EN: Blink the LED "err" times, fast.
+      blink( -err, 500 );
+      // ES: Para excepciones, parpadea el LED "exc" veces, lento.
+      // EN: For exceptions, blink the LED "exc" times, slow.
+      if (err==ERR_EXCEPTION)
+          blink( slave.getLastError(), 1000 );
+      delay( 5000 );
+  }
+}
+
+
+/*********************************************************
+ ES: Configuraci贸n del programa
+ EN: Program configuration
+*********************************************************/
+void setup() {
+  // ES: configura las entradas y salidas
+  // EN: Configure inputs and outputs
+  setup_mapping();
+
+  // ES: Abre la comunicaci贸n como esclavo
+  // EN: Start comms.
+  Serial.begin( 19200, SERIAL_8E1 );
+  slave.start();
+}
+
+
+/*********************************************************
+ ES: Inicio del programa
+ EN: Program start
+*********************************************************/
+void loop() {
+  // ES: Comprueba el buffer de entrada
+  // EN: Check the receive buffer
+  if (Serial.available()) {
+      int8_t retval = slave.poll( mapping );
+      if (retval < 0) {
+          report_error( retval );
+      }
+      tempus = millis();
+      digitalWrite(LED_BUILTIN, HIGH);
+  }
+
+  if (millis() - tempus > 50)
+      digitalWrite(LED_BUILTIN, LOW );
+  
+  // ES: Actualiza los pines de Arduino con la tabla de MODBUS
+  // EN: Update the Arduino's pins with the MODBUS table
+  mapping_poll();
 }

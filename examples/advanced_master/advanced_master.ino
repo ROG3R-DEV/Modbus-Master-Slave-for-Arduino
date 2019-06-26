@@ -27,14 +27,47 @@ uint8_t u8query; //!< pointer to message query
  *  u8txenpin : 0 for RS-232 and USB-FTDI 
  *               or any pin number > 1 for RS-485
  */
-Modbus master(0,Serial,0); // this is master and RS-232 or USB-FTDI
+Master master(Serial,0); // this is master and RS-232 or USB-FTDI
 
 /**
- * This is an structe which contains a query to an slave device
+ * This is an struct which contains a query to an slave device
  */
 modbus_t telegram[2];
 
 unsigned long u32wait;
+
+
+/**
+ *  LED blinking utility, used for error reporting.
+ */
+void blink(int8_t times, int delay_ms) {
+  pinMode( LED_BUILTIN, OUTPUT );
+  for (int8_t i=0; i<times; ++i) {
+      digitalWrite( LED_BUILTIN, HIGH );
+      delay( delay_ms );
+      digitalWrite( LED_BUILTIN, LOW );
+      delay( delay_ms );
+  }
+}
+
+
+/**
+ *  Report error status by blinking the built-in LED.
+ *  Number of short flashes = ERR state.
+ *  Number of long flashes = exception number.
+ */
+void report_error(int8_t err) {
+  // Error codes are negative.
+  if (err < 0) {
+      // Blink the LED "err" times, fast.
+      blink( -err, 500 );
+      // For exceptions, blink the LED "exc" times, slow.
+      if (err==ERR_EXCEPTION)
+          blink( master.getLastError(), 1000 );
+      delay( 5000 );
+  }
+}
+
 
 void setup() {
   // telegram 0: read registers
@@ -51,7 +84,9 @@ void setup() {
   telegram[1].u16CoilsNo = 1; // number of elements (coils or registers) to read
   telegram[1].au16reg = au16data+4; // pointer to a memory array in the Arduino
 
-  Serial.begin( 19200 ); // baud-rate at 19200
+  // Set serial port to baud-rate at 19200,
+  // 8 data bits, Even parity, 1 stop bit, as required by MODBUS standard.
+  Serial.begin( 19200, SERIAL_8E1 );
   master.start();
   master.setTimeOut( 5000 ); // if there is no answer in 5000 ms, roll over
   u32wait = millis() + 1000;
@@ -59,18 +94,29 @@ void setup() {
 }
 
 void loop() {
+  int8_t retval;
   switch( u8state ) {
-  case 0: 
+  case 0:
     if (millis() > u32wait) u8state++; // wait state
     break;
-  case 1: 
-    master.query( telegram[u8query] ); // send query (only once)
+
+  case 1:
+    retval = master.query( telegram[u8query] ); // send query (only once)
+    if (retval < 0) {
+        report_error( retval );
+        break;
+    }
     u8state++;
-	u8query++;
-	if (u8query > 2) u8query = 0;
+    u8query++;
+    if (u8query > 2) u8query = 0;
     break;
+
   case 2:
-    master.poll(); // check incoming messages
+    retval = master.poll(); // check incoming messages
+    if (retval < 0) {
+        report_error( retval );
+        break;
+    }
     if (master.getState() == COM_IDLE) {
       u8state = 0;
       u32wait = millis() + 1000; 
