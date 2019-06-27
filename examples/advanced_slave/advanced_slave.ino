@@ -146,7 +146,6 @@ void mapping_poll() {
   EN: LED blinking utility, used for error reporting.
 *********************************************************/
 void blink(int8_t times, int delay_ms) {
-  pinMode( LED_BUILTIN, OUTPUT );
   for (int8_t i=0; i<times; ++i) {
       digitalWrite( LED_BUILTIN, HIGH );
       delay( delay_ms );
@@ -171,7 +170,7 @@ void report_error(int8_t err) {
   if (err < 0) {
       // ES: Parpadea el LED "err" veces, rápido.
       // EN: Blink the LED "err" times, fast.
-      blink( -err, 500 );
+      blink( -err, 400 );
       // ES: Para excepciones, parpadea el LED "exc" veces, lento.
       // EN: For exceptions, blink the LED "exc" times, slow.
       if (err==ERR_EXCEPTION)
@@ -194,6 +193,9 @@ void setup() {
   // EN: Start comms.
   Serial.begin( 19200, SERIAL_8E1 );
   slave.start();
+
+  pinMode( LED_BUILTIN, OUTPUT );
+  digitalWrite(LED_BUILTIN, LOW );
 }
 
 

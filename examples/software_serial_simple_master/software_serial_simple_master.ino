@@ -46,9 +46,12 @@
 
 // data array for modbus network sharing
 uint16_t au16data[16];
-uint8_t u8state;
 
-SoftwareSerial mySerial(3, 5);//Create a SoftwareSerial object so that we can use software serial. Search "software serial" on Arduino.cc to find out more details.
+// Create a SoftwareSerial object so that we can use software serial.
+// Search "software serial" on Arduino.cc to find out more details.
+#define RX_PIN 3
+#define TX_PIN 5
+SoftwareSerial mySerial(RX_PIN, TX_PIN);
 
 /**
  *  Modbus object declaration
@@ -57,44 +60,97 @@ SoftwareSerial mySerial(3, 5);//Create a SoftwareSerial object so that we can us
  *  u8txenpin : 0 for RS-232 and USB-FTDI 
  *               or any pin number > 1 for RS-485
  */
-Modbus master(0, mySerial); // this is master and RS-232 or USB-FTDI via software serial
+Master master(mySerial); // this is master and RS-232 or USB-FTDI via software serial
 
 /**
- * This is an structe which contains a query to an slave device
+ * This is a struct which contains a query to a slave device
  */
 modbus_t telegram;
 
-unsigned long u32wait;
+uint8_t u8state;
+unsigned long u32time;
+
+
+/**
+ * In this example, errors can be reported directly to the Serial port.
+ */
+void report_error(const char* function, int8_t err) {
+  // Error codes are negative.
+  if (err < 0) {
+      Serial.print(function);
+      Serial.print(F("() reported error "));
+      Serial.println(err);
+      if (err==ERR_EXCEPTION) {
+          Serial.print(F("  -> exception code "));
+          Serial.println( master.getLastError() );
+      }
+  }
+}
+
 
 void setup() {
-  mySerial.begin(9600);//use the hardware serial if you want to connect to your computer via usb cable, etc.
-  master.start(); // start the ModBus object.
+  // Set software serial port to 19200 baud,
+  // Arduino's default SoftwareSerial implementation does not implement
+  // parity checking, so "8 bits data, no parity, 1 stop bit" is forced.
+  // If you want EVEN parity (MODBUS default) then you could try this
+  // library (I have not tested it! -AT):
+  // https://create.arduino.cc/projecthub/luke-j-barker/softwareserial-with-parity-9ede24
+  mySerial.begin( 19200 );
+
+  // start the modbus::Master object.
+  master.start();
+
   master.setTimeOut( 2000 ); // if there is no answer in 2000 ms, roll over
-  u32wait = millis() + 1000;
-  u8state = 0; 
+  u8state = 1; 
 }
 
 void loop() {
+  int8_t retval;
+
   switch( u8state ) {
   case 0: 
-    if (millis() > u32wait) u8state++; // wait state
+    if (millis() - u32time > 2000) {
+        u8state++; // wait state
+    }
     break;
+
   case 1: 
-    telegram.u8id = 104; // slave address
-    telegram.u8fct = 4; // function code (this one is registers read)
-    telegram.u16RegAdd = 3; // start address in slave
-    telegram.u16CoilsNo = 1; // number of elements (coils or registers) to read
+    telegram.u8id = 1; // slave address
+    telegram.u8fct = MB_FC_READ_REGISTERS; // function code 3
+    telegram.u16RegAdd = 40000; // start address in slave
+    telegram.u16CoilsNo = 4; // number of elements (coils or registers) to read
     telegram.au16reg = au16data; // pointer to a memory array in the Arduino
 
-    master.query( telegram ); // send query (only once)
-    u8state++;
+    retval = master.query( telegram ); // send query (only once)
+    if (retval < 0) {
+        report_error("query", retval);
+        // Reset
+        u8state = 0;
+        u32time = millis();
+    } else {
+        u8state++;
+    }
     break;
+
   case 2:
-    master.poll(); // check incoming messages
-    if (master.getState() == COM_IDLE) {
-      u8state = 0;
-      u32wait = millis() + 2000; 
-        Serial.println(au16data[0]);//Or do something else!
+    retval = master.poll();
+    if (retval < 0) {
+        report_error("poll", retval);
+        // Reset
+        u8state = 0;
+        u32time = millis();
+    }
+    else if (master.getState() == COM_IDLE) {
+         // Do something with the data...
+        Serial.print(F("Master got:"));
+        for (size_t i=0; i<telegram.u16CoilsNo; ++i) {
+            Serial.print(" ");
+            Serial.print(au16data[i]);
+        }
+        Serial.println("");
+        // Reset
+        u8state = 0;
+        u32time = millis();
     }
     break;
   }
