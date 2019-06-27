@@ -677,8 +677,8 @@ uint8_t Slave::getID() const
  */
 int8_t Slave::poll( uint16_t *regs, uint8_t u8size )
 {
-  RegisterBlock rb(regs, u8size);
-  CoilBlock cb(regs, 16L*u8size);
+  RegisterBlockData rb(regs, u8size);
+  CoilBlockData cb(regs, 16L*u8size);
   Mapping mapping(rb, cb);
   return poll( mapping );
 }

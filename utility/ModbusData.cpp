@@ -3,9 +3,6 @@
 namespace modbus {
 
 
-//
-// CoilBlock
-
 Block::Block(
     uint16_t  length_,
     uint16_t  start_address_
@@ -28,25 +25,8 @@ uint16_t Block::have_address(uint16_t addr) const
 }
 
 
-CoilBlock::CoilBlock(
-    uint8_t*  data_bytes_,
-    uint16_t  length_,
-    uint16_t  start_address_
-  ):
-    Block(length_, start_address_),
-    data_bytes(data_bytes_)
-{}
-
-
-CoilBlock::CoilBlock(
-    uint16_t* data_words_,
-    uint16_t  length_,
-    uint16_t  start_address_
-  ):
-    Block(length_, start_address_),
-    data_bytes((uint8_t*)data_words_)
-{}
-
+//
+// CoilBlock
 
 int8_t CoilBlock::write_many(
     uint16_t& dest_addr,
@@ -54,34 +34,24 @@ int8_t CoilBlock::write_many(
     uint16_t& quantity
   )
 {
-  const uint16_t offset    = dest_addr - start_address;
-  uint8_t*       dest_byte = data_bytes + (offset / 8);
-  uint8_t        dest_bit  = offset % 8;
+  const uint16_t end_addr = min(dest_addr + quantity, start_address + length);
 
-  size_t i;
-  for(i=0; i<(length - offset) && i<quantity; ++i)
+  int8_t result = 0;
+  for(size_t addr=dest_addr; addr<end_addr; ++addr)
   {
-    dirty = true;
-
-    // ?? Optimise this...
-    // ?? Probably best done with some assembly, where bit shifting can
-    // ?? be done with carries available.
     bool v = bitRead(*src.byte, src.bitn);
     src.bitn = 0x07 & (src.bitn + 1);
     if(src.bitn == 0)
     {
       ++src.byte;
     }
+    --quantity;
 
-    bitWrite(*dest_byte, dest_bit, v);
-    dest_bit = 0x07 & (dest_bit + 1);
-    if(dest_bit == 0)
-    {
-      ++dest_byte;
-    }
+    result = write_one(addr, v);
+    if(result != 0)
+        break;
   }
-  quantity -= i;
-  return 0;
+  return result;
 }
 
 
@@ -91,22 +61,15 @@ int8_t CoilBlock::read_many(
     uint16_t& quantity
   ) const
 {
-  const uint16_t offset  = src_addr - start_address;
-  const uint8_t* src     = data_bytes + (offset / 8);
-  uint8_t        src_bit = offset % 8;
+  const uint16_t end_addr = min(src_addr + quantity, start_address + length);
 
-  size_t i;
-  for(i=0; i<(length - offset) && i<quantity; ++i)
+  int8_t result = 0;
+  for(size_t addr=src_addr; addr<end_addr; ++addr)
   {
-    // ?? Optimise this...
-    // ?? Probably best done with some assembly, where bit shifting can
-    // ?? be done with carries available.
-    bool v = bitRead(*src, src_bit);
-    src_bit = 0x07 & (src_bit + 1);
-    if(src_bit == 0)
-    {
-      ++src;
-    }
+    bool v;
+    result = read_one(addr, v);
+    if(result != 0)
+        break;
 
     bitWrite(*dest.byte, dest.bitn, v);
     dest.bitn = 0x07 & (dest.bitn + 1);
@@ -115,8 +78,54 @@ int8_t CoilBlock::read_many(
       ++dest.byte;
       *dest.byte = 0;
     }
+    --quantity;
   }
-  quantity -= i;
+  return result;
+}
+
+
+//
+// CoilBlockData
+
+CoilBlockData::CoilBlockData(
+    uint8_t*  data_bytes_,
+    uint16_t  length_,
+    uint16_t  start_address_
+  ):
+    CoilBlock(length_, start_address_),
+    data_bytes(data_bytes_)
+{}
+
+
+CoilBlockData::CoilBlockData(
+    uint16_t* data_words_,
+    uint16_t  length_,
+    uint16_t  start_address_
+  ):
+    CoilBlock(length_, start_address_),
+    data_bytes((uint8_t*)data_words_)
+{}
+
+
+int8_t CoilBlockData::write_one(uint16_t dest_addr, bool value)
+{
+  const uint16_t offset    = dest_addr - start_address;
+  uint8_t*       dest_byte = data_bytes + (offset / 8);
+  uint8_t        dest_bit  = offset % 8;
+
+  dirty = true;
+  bitWrite(*dest_byte, dest_bit, value);
+  return 0;
+}
+
+
+int8_t CoilBlockData::read_one(uint16_t src_addr, bool& value) const
+{
+  const uint16_t offset  = src_addr - start_address;
+  const uint8_t* src     = data_bytes + (offset / 8);
+  uint8_t        src_bit = offset % 8;
+
+  value = bitRead(*src, src_bit);
   return 0;
 }
 
@@ -124,35 +133,24 @@ int8_t CoilBlock::read_many(
 //
 // RegisterBlock
 
-RegisterBlock::RegisterBlock(
-    uint16_t* data_words_,
-    uint16_t  length_, ///< Number of registers (2-byte words) in this block.
-    uint16_t  start_address_
-  ):
-    Block(length_, start_address_),
-    data_words(data_words_)
-{}
-
-
-//
-// No checks are made.
-// The caller is assumed to have checked that the address is valid.
-
 int8_t RegisterBlock::write_many(
     uint16_t& dst_addr,
     Position& src,
     uint16_t& quantity
   )
 {
+  int8_t result = 0;
   while(quantity && (dst_addr - start_address) < length)
   {
-    data_words[dst_addr - start_address] = (uint16_t)src.byte[0] << 8 | src.byte[1];
+    result = write_one(dst_addr, bswap16(*(uint16_t*)(src.byte)));
+    if(result != 0)
+        break;
+
     ++dst_addr;
     src.byte += 2;
     --quantity;
-    dirty = true;
   }
-  return 0;
+  return result;
 }
 
 
@@ -162,15 +160,51 @@ int8_t RegisterBlock::read_many(
     uint16_t& quantity
   ) const
 {
+  int8_t result = 0;
   while(quantity && (src_addr - start_address) < length)
   {
-    const uint16_t offset = src_addr - start_address;
-    dest.byte[0] = data_words[offset] >> 8;
-    dest.byte[1] = data_words[offset] & 0xFF;
+    uint16_t value;
+    result = read_one(src_addr, value);
+    if(result != 0)
+        break;
+
+    *(uint16_t*)(dest.byte) = bswap16(value);
     ++src_addr;
     dest.byte += 2;
     --quantity;
   }
+  return result;
+}
+
+
+//
+// RegisterBlockData
+
+RegisterBlockData::RegisterBlockData(
+    uint16_t* data_words_,
+    uint16_t  length_, ///< Number of registers (2-byte words) in this block.
+    uint16_t  start_address_
+  ):
+    RegisterBlock(length_, start_address_),
+    data_words(data_words_)
+{}
+
+
+//
+// No checks are made.
+// The caller is assumed to have checked that the address is valid.
+
+int8_t RegisterBlockData::write_one(uint16_t dst_addr, uint16_t value)
+{
+  data_words[dst_addr - start_address] = value;
+  dirty = true;
+  return 0;
+}
+
+
+int8_t RegisterBlockData::read_one(uint16_t src_addr, uint16_t& value) const
+{
+  value = data_words[src_addr - start_address];
   return 0;
 }
 

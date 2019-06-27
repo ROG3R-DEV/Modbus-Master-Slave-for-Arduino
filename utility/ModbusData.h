@@ -59,18 +59,18 @@ public:
       uint16_t& dest_addr,
       Position& src,
       uint16_t& quantity
-    );
+    ) = 0;
 
   virtual int8_t read_many(
       Position& dest,
       uint16_t& src_addr,
       uint16_t& quantity
-    ) const;
+    ) const = 0;
 
   virtual ~Block() {}
 
 protected:
-  Block(uint16_t length_, uint16_t start_address_ =0);
+  Block(uint16_t length_, uint16_t start_address_);
 
   Block*         next_block; ///< Collections are implemented as a linked list.
   const uint16_t length; ///< The number of addresses in this block.
@@ -88,29 +88,47 @@ private:
 class CoilBlock: public Block
 {
 public:
-  CoilBlock(
-      uint8_t*  data_bytes_,
-      uint16_t  length_,
-      uint16_t  start_address_ = 0
-    );
+  /** dest_addr is guaranteed to be in the range (start_address, start_address+length].
+   *  This method must set the 'dirty' flag, if the object's state has changed. */
+  virtual int8_t write_one(uint16_t dest_addr, bool value) = 0;
 
-  CoilBlock(
-      uint16_t* data_words_,
-      uint16_t  length_,
-      uint16_t  start_address_ = 0
-    );
+  /** src_addr is guaranteed to be in the range (start_address, start_address+length]. */
+  virtual int8_t read_one(uint16_t src_addr, bool& value) const = 0;
 
-  int8_t write_many(
+  virtual int8_t write_many(
       uint16_t& dest_addr,
       Position& src,
       uint16_t& quantity
     );
 
-  int8_t read_many(
+  virtual int8_t read_many(
       Position& dest,
       uint16_t& src_addr,
       uint16_t& quantity
     ) const;
+
+protected:
+  CoilBlock(uint16_t l_, uint16_t s_): Block(l_, s_) {}
+};
+
+
+class CoilBlockData: public CoilBlock
+{
+public:
+  CoilBlockData(
+      uint8_t*  data_bytes_,
+      uint16_t  length_,
+      uint16_t  start_address_ = 0
+    );
+
+  CoilBlockData(
+      uint16_t* data_words_,
+      uint16_t  length_,
+      uint16_t  start_address_ = 0
+    );
+
+  virtual int8_t write_one(uint16_t dest_addr, bool value);
+  virtual int8_t read_one(uint16_t src_addr, bool& value) const;
 
 private:
   uint8_t* const  data_bytes;
@@ -120,11 +138,12 @@ private:
 class RegisterBlock: public Block
 {
 public:
-  RegisterBlock(
-      uint16_t* data_words_,
-      uint16_t  length_, ///< Number of registers (2-byte words) in this block.
-      uint16_t  start_address_ = 0
-    );
+  /** dest_addr is guaranteed to be in the range (start_address, start_address+length].
+   *  This method must set the 'dirty' flag, if the object's state has changed. */
+  virtual int8_t write_one(uint16_t dest_addr, uint16_t value) = 0;
+
+  /** src_addr is guaranteed to be in the range (start_address, start_address+length]. */
+  virtual int8_t read_one(uint16_t src_addr, uint16_t& value) const = 0;
 
   int8_t write_many(
       uint16_t& dst_addr,
@@ -138,9 +157,24 @@ public:
       uint16_t& quantity
     ) const;
 
-private:
-  RegisterBlock(const RegisterBlock&); ///< Class is non-copyable.
+protected:
+  RegisterBlock(uint16_t l_, uint16_t s_): Block(l_, s_) {}
+};
 
+
+class RegisterBlockData: public RegisterBlock
+{
+public:
+  RegisterBlockData(
+      uint16_t* data_words_,
+      uint16_t  length_, ///< Number of registers (2-byte words) in this block.
+      uint16_t  start_address_ = 0
+    );
+
+  virtual int8_t write_one(uint16_t dest_addr, uint16_t value);
+  virtual int8_t read_one(uint16_t src_addr, uint16_t& value) const;
+
+private:
   uint16_t* const  data_words;
 };
 

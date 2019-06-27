@@ -16,6 +16,9 @@
 // Set to higher numbers for increasing levels of detail.
 #define VERBOSE_RESULTS 0
 
+// Set to 1 to quit after the first failure.
+#define ABORT_ON_FAIL 0
+
 uint16_t test_count =0;
 uint16_t pass_count =0;
 
@@ -38,8 +41,8 @@ Master master(master_stream,0);
 const uint8_t slave_id = 1;
 const uint16_t slave_data_count = 9;
 uint16_t slave_data[slave_data_count+1]; ///< Include extra OOB register
-CoilBlock coil_block((uint8_t*)slave_data, 16*slave_data_count);
-RegisterBlock reg_block(slave_data, slave_data_count);
+CoilBlockData coil_block((uint8_t*)slave_data, 16*slave_data_count);
+RegisterBlockData reg_block(slave_data, slave_data_count);
 Mapping mapping(reg_block, coil_block);
 int8_t slave_poll_result;
 
@@ -102,6 +105,11 @@ void fail(const char* type, uint16_t addr, uint16_t val, uint16_t expected)
   ++test_count;
   Serial.print(F("FAIL "));
   report(type, addr, val, expected);
+#if ABORT_ON_FAIL
+  Serial.println(F(">>> ABORT <<<"));
+  Serial.flush();
+  abort();
+#endif
 }
 
 void test_equal(const char* type, uint16_t addr, uint16_t val, uint16_t expected)
