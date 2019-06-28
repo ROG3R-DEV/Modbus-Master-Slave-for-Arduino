@@ -50,32 +50,6 @@ Loopback slave_stream(MAX_BUFFER+1);
 Slave slave(slave_id,slave_stream,0);
 
 
-/** Calculate MODBUS CRC of data. */
-uint16_t calcCRC(const void* data, uint8_t len)
-{
-    const uint8_t* bytes = static_cast<const uint8_t*>(data);
-    unsigned int temp, temp2, flag;
-    temp = 0xFFFF;
-    for (unsigned char i = 0; i < len; i++)
-    {
-        temp = temp ^ bytes[i];
-        for (unsigned char j = 1; j <= 8; j++)
-        {
-            flag = temp & 0x0001;
-            temp >>=1;
-            if (flag)
-                temp ^= 0xA001;
-        }
-    }
-    // Reverse byte order.
-    temp2 = temp >> 8;
-    temp = (temp << 8) | temp2;
-    temp &= 0xFFFF;
-    // the returned value is already swapped
-    // crcLo byte is first & crcHi byte is last
-    return temp;
-}
-
 void report(const char* type, uint16_t addr, uint16_t val, uint16_t expected)
 {
   Serial.print(type);
@@ -122,13 +96,13 @@ void test_equal(const char* type, uint16_t addr, uint16_t val, uint16_t expected
 
 uint16_t addr2word(uint16_t addr)
 {
-  return calcCRC(&addr, sizeof(addr));
+  return modbus::Base::calcCRC(&addr, sizeof(addr));
 }
 
 bool addr2bool(uint16_t addr)
 {
   uint16_t index = addr / 16;
-  uint16_t crc = calcCRC(&index, sizeof(index));
+  uint16_t crc = modbus::Base::calcCRC(&index, sizeof(index));
   return bitRead(crc, addr % 16);
 }
 
@@ -466,7 +440,7 @@ void test_multiple_registers()
       telegram.u16RegAdd = reg_addr;
       telegram.u16CoilsNo = num;
       fill_array_with_test_data(telegram.au16reg, num);
-      const uint16_t crc0 = calcCRC(telegram.au16reg, num*2);
+      const uint16_t crc0 = modbus::Base::calcCRC(telegram.au16reg, num*2);
 
       master.query( telegram );
       while(master.getState()==COM_WAITING)
@@ -476,7 +450,7 @@ void test_multiple_registers()
 
       // Check that the slave data has been set correctly.
       const uint16_t test_id = num*100 + reg_addr;
-      const uint16_t crc1 = calcCRC(slave_data+reg_addr, num*2);
+      const uint16_t crc1 = modbus::Base::calcCRC(slave_data+reg_addr, num*2);
       test_equal("test_multiple_registers, write", test_id, crc1, crc0);
     }
   }
@@ -559,6 +533,26 @@ void test_multiple_coils()
 }
 
 
+/** Test the MODBUS CRC calculation, by comparing the output of calcCRC() with
+ *  a few examples from the MODBUS spec document. */
+void test_crc()
+{
+  // Example from https://en.wikipedia.org/wiki/Modbus
+  uint8_t test1[] = {0x01, 0x04, 0x02, 0xFF, 0xFF};
+  test_equal("test_crc", 1, modbus::Base::calcCRC(test1,sizeof(test1)), bswap16(0x80B8));
+
+  // Examples from https://www.modbustools.com/modbus.html
+  uint8_t test2[] = {0x04, 0x01, 0x00, 0x0A, 0x00, 0x0D};
+  test_equal("test_crc", 2, modbus::Base::calcCRC(test2,sizeof(test2)), bswap16(0x98DD));
+
+  uint8_t test3[] = {0x04, 0x02, 0x00, 0x0A, 0x00, 0x0D};
+  test_equal("test_crc", 3, modbus::Base::calcCRC(test3,sizeof(test3)), bswap16(0x9899));
+
+  uint8_t test4[] = {0x04, 0x02, 0x02, 0x0A, 0x11};
+  test_equal("test_crc", 4, modbus::Base::calcCRC(test4,sizeof(test4)), bswap16(0x14B3));
+}
+
+
 void test_loopback()
 {
   const char* test_str = "Hello";
@@ -588,6 +582,9 @@ long delay_seconds = 1;
 void loop()
 {
   test_count = pass_count = 0;
+
+  test_crc();
+
   init_master();
 
   // Reset counters

@@ -80,7 +80,6 @@ protected:
     bool   rxFrameReady();
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
     int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
-    uint16_t calcCRC( const uint8_t* data, uint8_t len ) const;
 
 public:
     void start();
@@ -90,6 +89,8 @@ public:
     int8_t   getLastError() const; //!< Get last error (ERR_XXX) or exception (EXC_XXX) code.
     void     clearLastError(); //!< Set last error to 0.
     void setTxendPinOverTime( uint32_t u32overTime );
+
+    static uint16_t calcCRC( const void* data, uint8_t len );
 
     friend class Modbus;
 };
@@ -353,6 +354,39 @@ void Base::clearLastError()
 void Base::setTxendPinOverTime( uint32_t u32overTime )
 {
     this->u32overTime = u32overTime;
+}
+
+
+/**
+ * @brief
+ * This method calculates CRC
+ *
+ * @return uint16_t calculated CRC value for the message
+ * @ingroup buffer
+ */
+uint16_t Base::calcCRC(const void* data, uint8_t len)
+{
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    unsigned int temp, temp2, flag;
+    temp = 0xFFFF;
+    for (unsigned char i = 0; i < len; i++)
+    {
+        temp = temp ^ bytes[i];
+        for (unsigned char j = 1; j <= 8; j++)
+        {
+            flag = temp & 0x0001;
+            temp >>=1;
+            if (flag)
+                temp ^= 0xA001;
+        }
+    }
+    // Reverse byte order.
+    temp2 = temp >> 8;
+    temp = (temp << 8) | temp2;
+    temp &= 0xFFFF;
+    // the returned value is already swapped
+    // crcLo byte is first & crcHi byte is last
+    return temp;
 }
 
 
@@ -1083,38 +1117,6 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
     u16OutCnt++;
 
     return 0;
-}
-
-
-/**
- * @brief
- * This method calculates CRC
- *
- * @return uint16_t calculated CRC value for the message
- * @ingroup buffer
- */
-uint16_t Base::calcCRC(const uint8_t* data, uint8_t len) const
-{
-    unsigned int temp, temp2, flag;
-    temp = 0xFFFF;
-    for (unsigned char i = 0; i < len; i++)
-    {
-        temp = temp ^ data[i];
-        for (unsigned char j = 1; j <= 8; j++)
-        {
-            flag = temp & 0x0001;
-            temp >>=1;
-            if (flag)
-                temp ^= 0xA001;
-        }
-    }
-    // Reverse byte order.
-    temp2 = temp >> 8;
-    temp = (temp << 8) | temp2;
-    temp &= 0xFFFF;
-    // the returned value is already swapped
-    // crcLo byte is first & crcHi byte is last
-    return temp;
 }
 
 
