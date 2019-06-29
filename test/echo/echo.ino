@@ -205,7 +205,7 @@ void poll()
 
 uint16_t read_holding_register(uint16_t addr)
 {
-  telegram.u8fct = MB_FC_READ_REGISTERS;
+  telegram.u8fct = MB_FC_READ_HOLDING_REGISTERS;
   telegram.u16RegAdd = addr;
   telegram.u16CoilsNo = 1;
   master.query( telegram );
@@ -218,7 +218,7 @@ uint16_t read_holding_register(uint16_t addr)
 
 void write_holding_register(uint16_t addr, uint16_t val)
 {
-  telegram.u8fct = MB_FC_WRITE_REGISTER;
+  telegram.u8fct = MB_FC_WRITE_SINGLE_REGISTER;
   telegram.u16RegAdd = addr;
   telegram.u16CoilsNo = 0;
   telegram.au16reg[0] = val;
@@ -342,7 +342,7 @@ bool read_coil(uint16_t addr)
 
 void write_coil(uint16_t addr, bool val)
 {
-  telegram.u8fct = MB_FC_WRITE_COIL;
+  telegram.u8fct = MB_FC_WRITE_SINGLE_COIL;
   telegram.u16RegAdd = addr;
   telegram.u16CoilsNo = 0;
   telegram.au16reg[0] = (val? 1: 0);

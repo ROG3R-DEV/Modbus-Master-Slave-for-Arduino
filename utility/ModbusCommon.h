@@ -58,15 +58,34 @@ enum MESSAGE
  */
 enum MB_FC
 {
-    MB_FC_NONE                     = 0,   /*!< null operator */
-    MB_FC_READ_COILS               = 1,	/*!< FCT=1 -> read coils or digital outputs */
-    MB_FC_READ_DISCRETE_INPUT      = 2,	/*!< FCT=2 -> read digital inputs */
-    MB_FC_READ_REGISTERS           = 3,	/*!< FCT=3 -> read registers or analog outputs */
-    MB_FC_READ_INPUT_REGISTER      = 4,	/*!< FCT=4 -> read analog inputs */
-    MB_FC_WRITE_COIL               = 5,	/*!< FCT=5 -> write single coil or output */
-    MB_FC_WRITE_REGISTER           = 6,	/*!< FCT=6 -> write single register */
-    MB_FC_WRITE_MULTIPLE_COILS     = 15,	/*!< FCT=15 -> write multiple coils or outputs */
-    MB_FC_WRITE_MULTIPLE_REGISTERS = 16	/*!< FCT=16 -> write multiple registers */
+    MB_FC_NONE                     = 0,  /*!< null operator */
+    MB_FC_READ_COILS               = 1,  /*!< FCT=1 -> read coils or digital outputs */
+    MB_FC_READ_DISCRETE_INPUTS     = 2,  /*!< FCT=2 -> read digital inputs */
+    MB_FC_READ_HOLDING_REGISTERS   = 3,  /*!< FCT=3 -> read holding registers or analog outputs */
+    MB_FC_READ_INPUT_REGISTER      = 4,  /*!< FCT=4 -> read analog inputs */
+    MB_FC_WRITE_SINGLE_COIL        = 5,  /*!< FCT=5 -> write single coil or output */
+    MB_FC_WRITE_SINGLE_REGISTER    = 6,  /*!< FCT=6 -> write single register */
+    MB_FC_READ_EXCEPTION_STATUS    = 7,
+    MB_FC_DIAGNOSTICS              = 8,
+
+    MB_FC_GET_COMM_EVENT_COUNTER   = 11,
+    MB_FC_GET_COMM_EVENT_LOG       = 12,
+
+    MB_FC_WRITE_MULTIPLE_COILS     = 15, /*!< FCT=15 -> write multiple coils or outputs */
+    MB_FC_WRITE_MULTIPLE_REGISTERS = 16, /*!< FCT=16 -> write multiple registers */
+    MB_FC_REPORT_SERVER_ID         = 17,
+
+    MB_FC_READ_FILE_RECORD         = 20,
+    MB_FC_WRITE_FILE_RECORD        = 21,
+    MB_FC_MASK_WRITE_REGISTER      = 22,
+    MB_FC_READ_WRITE_MULTIPLE_REGISTERS = 23,
+    MB_FC_READ_FIFO_QUEUE          = 24,
+
+    // Old, backward compatibility aliases.
+    MB_FC_READ_DISCRETE_INPUT      = 2,
+    MB_FC_READ_REGISTERS           = 3,
+    MB_FC_WRITE_COIL               = 5,
+    MB_FC_WRITE_REGISTER           = 6
 };
 
 enum COM_STATES
@@ -114,11 +133,11 @@ enum EXC_LIST
 const unsigned char fctsupported[] =
 {
     MB_FC_READ_COILS,
-    MB_FC_READ_DISCRETE_INPUT,
-    MB_FC_READ_REGISTERS,
+    MB_FC_READ_DISCRETE_INPUTS,
+    MB_FC_READ_HOLDING_REGISTERS,
     MB_FC_READ_INPUT_REGISTER,
-    MB_FC_WRITE_COIL,
-    MB_FC_WRITE_REGISTER,
+    MB_FC_WRITE_SINGLE_COIL,
+    MB_FC_WRITE_SINGLE_REGISTER,
     MB_FC_WRITE_MULTIPLE_COILS,
     MB_FC_WRITE_MULTIPLE_REGISTERS
 };

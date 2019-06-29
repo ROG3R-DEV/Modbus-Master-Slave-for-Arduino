@@ -493,24 +493,24 @@ int8_t Master::query( modbus_t telegram )
     switch( telegram.u8fct )
     {
     case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUT:
-    case MB_FC_READ_REGISTERS:
+    case MB_FC_READ_DISCRETE_INPUTS:
+    case MB_FC_READ_HOLDING_REGISTERS:
     case MB_FC_READ_INPUT_REGISTER:
         au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
         au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
         u8BufferSize = 6;
         break;
-    case MB_FC_WRITE_COIL:
+    case MB_FC_WRITE_SINGLE_COIL:
         au8Buffer[ NB_HI ]      = ((au16regs[0] > 0) ? 0xff : 0);
         au8Buffer[ NB_LO ]      = 0;
         u8BufferSize = 6;
         break;
-    case MB_FC_WRITE_REGISTER:
+    case MB_FC_WRITE_SINGLE_REGISTER:
         au8Buffer[ NB_HI ]      = highByte(au16regs[0]);
         au8Buffer[ NB_LO ]      = lowByte(au16regs[0]);
         u8BufferSize = 6;
         break;
-    case MB_FC_WRITE_MULTIPLE_COILS: // TODO: implement "sending coils"
+    case MB_FC_WRITE_MULTIPLE_COILS:
         au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
         au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
         au8Buffer[ BYTE_CNT ]   = (telegram.u16CoilsNo + 7)/8;
@@ -609,17 +609,17 @@ int8_t Master::poll()
     switch( au8Buffer[ FUNC ] )
     {
     case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUT:
+    case MB_FC_READ_DISCRETE_INPUTS:
         // call get_FC1 to transfer the incoming message to au16regs buffer
         get_FC1( au8Buffer, u8BufferSize );
         break;
     case MB_FC_READ_INPUT_REGISTER:
-    case MB_FC_READ_REGISTERS :
+    case MB_FC_READ_HOLDING_REGISTERS :
         // call get_FC3 to transfer the incoming message to au16regs buffer
         get_FC3( au8Buffer, u8BufferSize );
         break;
-    case MB_FC_WRITE_COIL:
-    case MB_FC_WRITE_REGISTER :
+    case MB_FC_WRITE_SINGLE_COIL:
+    case MB_FC_WRITE_SINGLE_REGISTER :
     case MB_FC_WRITE_MULTIPLE_COILS:
     case MB_FC_WRITE_MULTIPLE_REGISTERS :
         // nothing to do
@@ -746,17 +746,17 @@ int8_t Slave::poll( Mapping& mapping )
         switch( au8Buffer[ FUNC ] )
         {
         case MB_FC_READ_COILS:
-        case MB_FC_READ_DISCRETE_INPUT:
+        case MB_FC_READ_DISCRETE_INPUTS:
             i8error = process_FC1( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
             break;
         case MB_FC_READ_INPUT_REGISTER:
-        case MB_FC_READ_REGISTERS :
+        case MB_FC_READ_HOLDING_REGISTERS :
             i8error = process_FC3( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
             break;
-        case MB_FC_WRITE_COIL:
+        case MB_FC_WRITE_SINGLE_COIL:
             i8error = process_FC5( mapping, au8Buffer, u8BufferSize );
             break;
-        case MB_FC_WRITE_REGISTER :
+        case MB_FC_WRITE_SINGLE_REGISTER :
             i8error = process_FC6( mapping, au8Buffer, u8BufferSize );
             break;
         case MB_FC_WRITE_MULTIPLE_COILS:
@@ -1284,7 +1284,7 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
     // Read the requested values into buf[3] onwards.
     if (buf[ FUNC ] == MB_FC_READ_COILS)
         return mapping.read_coils(buf + 3, addr, quantity);
-    else // MB_FC_READ_DISCRETE_INPUT
+    else // MB_FC_READ_DISCRETE_INPUTS
         return mapping.read_discrete_inputs(buf + 3, addr, quantity);
 }
 
