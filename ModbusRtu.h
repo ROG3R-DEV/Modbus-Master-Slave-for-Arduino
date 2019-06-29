@@ -366,27 +366,20 @@ void Base::setTxendPinOverTime( uint32_t u32overTime )
  */
 uint16_t Base::calcCRC(const void* data, uint8_t len)
 {
-    const uint8_t* bytes = static_cast<const uint8_t*>(data);
-    unsigned int temp, temp2, flag;
-    temp = 0xFFFF;
-    for (unsigned char i = 0; i < len; i++)
+    const uint8_t* const bytes = static_cast<const uint8_t*>(data);
+    uint16_t crc = 0xFFFF;
+    for (uint8_t i = 0; i < len; i++)
     {
-        temp = temp ^ bytes[i];
-        for (unsigned char j = 1; j <= 8; j++)
+        crc ^= bytes[i];
+        for (uint8_t j = 0; j < 8; j++)
         {
-            flag = temp & 0x0001;
-            temp >>=1;
+            const bool flag = crc & 0x0001;
+            crc >>= 1;
             if (flag)
-                temp ^= 0xA001;
+                crc ^= 0xA001;
         }
     }
-    // Reverse byte order.
-    temp2 = temp >> 8;
-    temp = (temp << 8) | temp2;
-    temp &= 0xFFFF;
-    // the returned value is already swapped
-    // crcLo byte is first & crcHi byte is last
-    return temp;
+    return crc;
 }
 
 
@@ -1087,8 +1080,8 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
         return ERR_TX_BUFF_OVERFLOW;
     }
     const uint16_t u16crc = calcCRC( buf, count );
-    buf[ count   ] = u16crc >> 8;
-    buf[ count+1 ] = u16crc & 0x00ff;
+    buf[ count   ] = lowByte(  u16crc );
+    buf[ count+1 ] = highByte( u16crc );
 
     if (u8txenpin > 1)
     {
@@ -1137,7 +1130,7 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
     }
 
     // check message crc vs calculated crc
-    const uint16_t u16MsgCRC = word( buf[count - 2], buf[count - 1] );
+    const uint16_t u16MsgCRC = word( buf[count - 1], buf[count - 2] );
     if ( calcCRC( buf, count-2 ) != u16MsgCRC )
     {
         return ERR_BAD_CRC;
@@ -1238,7 +1231,7 @@ int8_t Slave::validateRequest( const uint8_t* buf, uint8_t count ) const
         return ERR_MALFORMED_MESSAGE;
 
     // check message crc vs calculated crc
-    const uint16_t u16MsgCRC = word( buf[count - 2], buf[count - 1] );
+    const uint16_t u16MsgCRC = word( buf[count - 1], buf[count - 2] );
     if ( calcCRC( buf, count-2 ) != u16MsgCRC )
     {
         return ERR_BAD_CRC;

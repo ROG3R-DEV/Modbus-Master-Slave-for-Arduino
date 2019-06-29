@@ -539,17 +539,17 @@ void test_crc()
 {
   // Example from https://en.wikipedia.org/wiki/Modbus
   uint8_t test1[] = {0x01, 0x04, 0x02, 0xFF, 0xFF};
-  test_equal("test_crc", 1, modbus::Base::calcCRC(test1,sizeof(test1)), bswap16(0x80B8));
+  test_equal("test_crc", 1, modbus::Base::calcCRC(test1,sizeof(test1)), 0x80B8);
 
   // Examples from https://www.modbustools.com/modbus.html
   uint8_t test2[] = {0x04, 0x01, 0x00, 0x0A, 0x00, 0x0D};
-  test_equal("test_crc", 2, modbus::Base::calcCRC(test2,sizeof(test2)), bswap16(0x98DD));
+  test_equal("test_crc", 2, modbus::Base::calcCRC(test2,sizeof(test2)), 0x98DD);
 
   uint8_t test3[] = {0x04, 0x02, 0x00, 0x0A, 0x00, 0x0D};
-  test_equal("test_crc", 3, modbus::Base::calcCRC(test3,sizeof(test3)), bswap16(0x9899));
+  test_equal("test_crc", 3, modbus::Base::calcCRC(test3,sizeof(test3)), 0x9899);
 
   uint8_t test4[] = {0x04, 0x02, 0x02, 0x0A, 0x11};
-  test_equal("test_crc", 4, modbus::Base::calcCRC(test4,sizeof(test4)), bswap16(0x14B3));
+  test_equal("test_crc", 4, modbus::Base::calcCRC(test4,sizeof(test4)), 0x14B3);
 }
 
 
