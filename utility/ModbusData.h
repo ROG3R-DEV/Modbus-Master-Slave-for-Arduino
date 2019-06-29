@@ -9,24 +9,7 @@
 namespace modbus {
 
 
-/** Only need to swap endianness on little endian machines. */
-inline uint16_t bswap16(uint16_t v) __attribute__((always_inline));
-inline uint16_t bswap16(uint16_t v)
-{
-#if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__)
-#  error "Cannot determine byte order."
-#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#  if __GNUC__ > 4 || (__GNUC__ == 4  &&  __GNUC_MINOR__ > 7)
-      return __builtin_bswap16(v);
-#  else
-      return (v<<8)|(v>>8);
-#  endif
-#else
-      return v;
-#endif
-}
-
-
+/** Helper class, used to keep track of buffer position. */
 struct Position
 {
   uint8_t* byte;
@@ -173,6 +156,31 @@ public:
 
   virtual int8_t write_one(uint16_t dest_addr, uint16_t value);
   virtual int8_t read_one(uint16_t src_addr, uint16_t& value) const;
+
+  /** Helper - access the data buffer as an object type.
+   *  You can use this with placement new, to use the RegisterBlockData as
+   *  arbitrary memory...
+   *
+   *      // Construct an object of type MyClass at MODBUS address 1234...
+   *      MyClass* obj = new (rbd.address2object<MyClass>(1234)) MyClass;
+   *
+   *      // Access the object later...
+   *      rbd.address2object<MyClass>(1234)->myClassMethod();
+   */
+  template<typename T>
+  T* address2object(uint16_t addr)
+    {
+      // Only perform the cast if the object fits into the buffer.
+      if(have_address(addr) * sizeof(uint16_t) >= sizeof(T))
+          return static_cast<T*>(data_words + (addr - start_address));
+      else
+          return NULL;
+    }
+
+  /** Default to using the start of the data block. */
+  template<typename T>
+  T* address2object()
+    { return address2object<T>(start_address); }
 
 private:
   uint16_t* const  data_words;

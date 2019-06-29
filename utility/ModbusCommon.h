@@ -123,6 +123,25 @@ const unsigned char fctsupported[] =
     MB_FC_WRITE_MULTIPLE_REGISTERS
 };
 
+
+/** Only need to swap endianness on little endian machines. */
+inline uint16_t bswap16(uint16_t v) __attribute__((always_inline));
+inline uint16_t bswap16(uint16_t v)
+{
+#if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__)
+#  error "Cannot determine byte order."
+#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#  if __GNUC__ > 4 || (__GNUC__ == 4  &&  __GNUC_MINOR__ > 7)
+      return __builtin_bswap16(v);
+#  else
+      return (v<<8)|(v>>8);
+#  endif
+#else
+      return v;
+#endif
+}
+
+
 #if !defined(T35)
 #define T35  5
 #endif
