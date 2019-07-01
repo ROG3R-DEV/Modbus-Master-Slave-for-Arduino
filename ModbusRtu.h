@@ -153,6 +153,7 @@ private:
     int8_t process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC7( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC8( uint8_t* buf, uint8_t& count );
+    int8_t process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count );
 
@@ -772,6 +773,9 @@ int8_t Slave::poll( Mapping& mapping )
         break;
     case MB_FC_DIAGNOSTICS:
         i8error = process_FC8( au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_GET_COMM_EVENT_COUNTER:
+        i8error = process_FC11( mapping, au8Buffer, u8BufferSize );
         break;
     case MB_FC_WRITE_MULTIPLE_COILS:
         i8error = process_FC15( mapping, au8Buffer, u8BufferSize );
@@ -1460,7 +1464,7 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
     case 0x10: // Return Slave NAK Count
     case 0x11: // Return Slave Busy Count
     case 0x12: // Return Bus Character Overrun Count
-        *(uint16_t*)(buf + 4) = bswap16( u16Counter[subfunction - 0x0B] );
+        *(uint16_t*)(buf + 4) = bswap16( u16Counter[subfunction - 0x0A] );
         return 0;
 
     case 0x14: // Clear Overrun Counter ("and Flag")
@@ -1474,6 +1478,39 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
         break;
     };
     return EXC_ILLEGAL_FUNCTION;
+}
+
+
+/**
+ * @brief
+ * This method processes function 11: MB_FC_GET_COMM_EVENT_COUNTER
+ *
+ * @return count Response to master length
+ * @ingroup discrete
+ */
+int8_t Slave::process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count )
+{
+    // Validate the request message size.
+    if (count != 4)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    count = 6;
+
+    // Status word. (User needs to override Mapping::is_busy() for this.
+    if (mapping.is_busy())
+        buf[2] = buf[3] = 0xFF;
+    else
+        buf[2] = buf[3] = 0x00;
+    
+    // Counts calls to this function, so they can be excluded from the result.
+    ++u16Counter[CNT_CALLS_TO_FC11];
+
+    const uint16_t comm_event_count =
+        u16Counter[CNT_SLAVE_MESSAGE] - u16Counter[CNT_SLAVE_EXCEPTION]
+        - u16Counter[CNT_SLAVE_NO_RESPONSE] - u16Counter[CNT_CALLS_TO_FC11];
+    
+    *(uint16_t*)(buf + 4) = bswap16(comm_event_count);
+    return 0;
 }
 
 

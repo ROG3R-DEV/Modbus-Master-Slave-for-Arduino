@@ -124,7 +124,7 @@ void mapping_poll() {
 
   // ES: Diagnóstico de la comunicación (para debug)
   // EN: Comms diagnostics (for debug).
-  for (uint8_t c=0; c<NUM_COUNTERS; ++c)
+  for (uint8_t c=1; c<=8; ++c)
       diagnostic_register[c] = slave.getCounter(c);
 
   // ES: Cambia el valor del PWM

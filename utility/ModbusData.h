@@ -201,10 +201,14 @@ public:
   /** Clear the "dirty" flag. */
   void set_clean();
 
-  /** May be overridden to write a single byte to *dest.
+  /** For FC7: May be overridden to write a single byte to *dest.
    *  Interpreted as eight server-defined exception status flags. */
   virtual int8_t read_exception_status(uint8_t* dest)
     { (void)dest; return EXC_ILLEGAL_FUNCTION; }
+
+  /** For FC11: May be overridden to return TRUE if the server is busy. */
+  virtual bool is_busy()
+    { return false; }
 
   //
   // Coils (read/write boolean values).

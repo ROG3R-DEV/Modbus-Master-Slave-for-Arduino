@@ -159,26 +159,30 @@ enum EXC_LIST
  */
 enum CounterId
 {
+    // Event counter used by FC11: Counts calls to FC11.
+
+    CNT_CALLS_TO_FC11     = 0,
+
     // Counters defined in MODBUS Protocol for slaves:
 
-    CNT_BUS_MESSAGE       = 0, ///< Valid messages seen on the bus.
-    CNT_BUS_COMM_ERROR    = 1, ///< CRC fails, and gibberish.
-    CNT_SLAVE_EXCEPTION   = 2, ///< Slave: Exception responses sent
-    CNT_SLAVE_MESSAGE     = 3, ///< Slave: Messages arrived for this server.
-    CNT_SLAVE_NO_RESPONSE = 4, ///< Slave: Messages with no response sent.
-    CNT_SLAVE_NAK         = 5, ///< Slave: NAK (Exception 7) responses sent.
-    CNT_SLAVE_BUSY        = 6, ///< Slave: Busy (Exception 6) responses sent.
-    CNT_BUS_CHAR_OVERRUN  = 7, ///< Too-long messages seen on the bus.
+    CNT_BUS_MESSAGE       = 1, ///< Valid messages seen on the bus.
+    CNT_BUS_COMM_ERROR    = 2, ///< CRC fails, and gibberish.
+    CNT_SLAVE_EXCEPTION   = 3, ///< Slave: Exception responses sent
+    CNT_SLAVE_MESSAGE     = 4, ///< Slave: Messages arrived for this server.
+    CNT_SLAVE_NO_RESPONSE = 5, ///< Slave: Messages with no response sent.
+    CNT_SLAVE_NAK         = 6, ///< Slave: NAK (Exception 7) responses sent.
+    CNT_SLAVE_BUSY        = 7, ///< Slave: Busy (Exception 6) responses sent.
+    CNT_BUS_CHAR_OVERRUN  = 8, ///< Too-long messages seen on the bus.
 
     // Counters used in *this implementation* for masters:
 
-    CNT_MASTER_EXCEPTION = 2, ///< Master: Exception responses received.
-    CNT_MASTER_QUERY     = 3, ///< Master: Queries sent.
-    CNT_MASTER_RESPONSE  = 4, ///< Master: Responses received
-    CNT_MASTER_IGNORED   = 5, ///< Master: Bad responses ignored.
-    CNT_MASTER_TIMEOUT   = 6, ///< Master: timeouts.
+    CNT_MASTER_EXCEPTION = 3, ///< Master: Exception responses received.
+    CNT_MASTER_QUERY     = 4, ///< Master: Queries sent.
+    CNT_MASTER_RESPONSE  = 5, ///< Master: Responses received
+    CNT_MASTER_IGNORED   = 6, ///< Master: Bad responses ignored.
+    CNT_MASTER_TIMEOUT   = 7, ///< Master: timeouts.
 
-    NUM_COUNTERS = 8
+    NUM_COUNTERS = 9
 };
 
 
