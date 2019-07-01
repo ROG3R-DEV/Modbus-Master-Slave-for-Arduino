@@ -31,19 +31,19 @@ unsigned long tempus;
 // ES: La tabla de registros que se desea compartir por la red
 // EN: The table of records that you want to share over the network
 uint8_t coil[1];
-CoilBlock coil_block(coil, 4, 0);
+CoilBlockData coil_block(coil, 4, 0);
 
 uint8_t discrete_input[1];
-CoilBlock discrete_input_block(discrete_input, 4, 10000);
+CoilBlockData discrete_input_block(discrete_input, 4, 10000);
 
 uint16_t input_register[2];
-RegisterBlock input_register_block(input_register, 2, 30000);
+RegisterBlockData input_register_block(input_register, 2, 30000);
 
-uint16_t diagnostic_register[3];
-RegisterBlock diagnostic_register_block(diagnostic_register, 3, 31000);
+uint16_t diagnostic_register[NUM_COUNTERS];
+RegisterBlockData diagnostic_register_block(diagnostic_register, NUM_COUNTERS, 31000);
 
 uint16_t holding_register[2];
-RegisterBlock holding_register_block(holding_register, 2, 40000);
+RegisterBlockData holding_register_block(holding_register, 2, 40000);
 
 Mapping mapping;
 
@@ -124,9 +124,8 @@ void mapping_poll() {
 
   // ES: Diagnóstico de la comunicación (para debug)
   // EN: Comms diagnostics (for debug).
-  diagnostic_register[0] = slave.getInCnt();
-  diagnostic_register[1] = slave.getOutCnt();
-  diagnostic_register[2] = slave.getErrCnt();
+  for (uint8_t c=0; c<NUM_COUNTERS; ++c)
+      diagnostic_register[c] = slave.getCounter(c);
 
   // ES: Cambia el valor del PWM
   // EN: Set the level of the PWN outputs.

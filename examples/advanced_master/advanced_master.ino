@@ -97,7 +97,7 @@ void report_error(int8_t err) {
 void setup() {
   // telegram 0: read registers
   telegram[0].u8id = 1; // slave address
-  telegram[0].u8fct = MB_FC_READ_INPUT_REGISTER; // function code 4
+  telegram[0].u8fct = MB_FC_READ_INPUT_REGISTERS; // function code 4
   telegram[0].u16RegAdd = 30000; // start address in slave
   telegram[0].u16CoilsNo = 2; // number of elements (coils or registers) to read
   telegram[0].au16reg = au16data; // pointer to a memory array in the Arduino

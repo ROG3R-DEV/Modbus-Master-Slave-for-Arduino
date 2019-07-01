@@ -53,7 +53,6 @@ enum MESSAGE
  * Modbus function codes summary.
  * These are the implement function codes either for Master or for Slave.
  *
- * @see also fctsupported
  * @see also modbus_t
  */
 enum MB_FC
@@ -62,7 +61,7 @@ enum MB_FC
     MB_FC_READ_COILS               = 1,  /*!< FCT=1 -> read coils or digital outputs */
     MB_FC_READ_DISCRETE_INPUTS     = 2,  /*!< FCT=2 -> read digital inputs */
     MB_FC_READ_HOLDING_REGISTERS   = 3,  /*!< FCT=3 -> read holding registers or analog outputs */
-    MB_FC_READ_INPUT_REGISTER      = 4,  /*!< FCT=4 -> read analog inputs */
+    MB_FC_READ_INPUT_REGISTERS     = 4,  /*!< FCT=4 -> read analog inputs */
     MB_FC_WRITE_SINGLE_COIL        = 5,  /*!< FCT=5 -> write single coil or output */
     MB_FC_WRITE_SINGLE_REGISTER    = 6,  /*!< FCT=6 -> write single register */
     MB_FC_READ_EXCEPTION_STATUS    = 7,
@@ -84,6 +83,7 @@ enum MB_FC
     // Old, backward compatibility aliases.
     MB_FC_READ_DISCRETE_INPUT      = 2,
     MB_FC_READ_REGISTERS           = 3,
+    MB_FC_READ_INPUT_REGISTER      = 4,
     MB_FC_WRITE_COIL               = 5,
     MB_FC_WRITE_REGISTER           = 6
 };
@@ -105,8 +105,9 @@ enum ERR_LIST
     ERR_TIME_OUT_EXPIRED  = -6, //!< Master::poll(). Master has given up waiting for answer.
     ERR_TX_BUFF_OVERFLOW  = -7, //!< Any Tx method.
     ERR_RX_BUFF_OVERFLOW  = -8, //!< poll() methods.
-    ERR_MALFORMED_MESSAGE = -9,  //!< poll() methods.
-    ERR_OUT_OF_MEMORY     = -10
+    ERR_MALFORMED_MESSAGE = -9, //!< poll() methods.
+    ERR_OUT_OF_MEMORY     = -10,
+    ERR_LISTEN_ONLY_MODE  = -11 // Slave is in listen only mode.
 };
 
 enum EXC_LIST
@@ -118,7 +119,7 @@ enum EXC_LIST
     EXC_SERVER_DEVICE_FAILURE = 4,
     EXC_ACKNOWLEDGE           = 5,
     EXC_SERVER_DEVICE_BUSY    = 6,
-
+    EXC_NEGATIVE_ACKNOWLEDGE  = 7, // http://www.simplymodbus.ca/exceptions.htm
     EXC_MEMORY_PARITY_ERROR   = 8,
     EXC_GATEWAY_PATH_UNAVAILABLE = 10,
     EXC_GATEWAY_TARGET_DEVICE_FAILED_TO_RESPOND = 11,
@@ -130,16 +131,54 @@ enum EXC_LIST
     EXC_EXECUTE    = 4
 };
 
-const unsigned char fctsupported[] =
+/** MODBUS serial line counters.
+ *  Defined in Modbus_over_serial_line_V1_02.pdf, section 6.1.1, page 35.
+ * (Numbers used here are indexes into a zero-based array. Add one to 
+ *  get the MODBUS counter number.)
+ *
+ *  # Common:
+ *  All messages seen on bus =
+ *    CNT_BUS_MESSAGE + CNT_BUS_COMM_ERROR + CNT_BUS_CHAR_OVERRUN
+ *
+ *  # For slaves:
+ *  CNT_SLAVE_MESSAGE <= CNT_BUS_MESSAGE
+ *  Non-exception responses sent by slave =
+ *    CNT_SLAVE_MESSAGE - CNT_SLAVE_EXCEPTION - CNT_SLAVE_NO_RESPONSE
+ *  CNT_SLAVE_NAK <= CNT_SLAVE_EXCEPTION
+ *  CNT_SLAVE_BUSY <= CNT_SLAVE_EXCEPTION
+ *  
+ *  # For masters:
+ *  
+ *  CNT_MASTER_RESPONSE <= CNT_BUS_MESSAGE
+ *  Good responses received by master =
+ *    CNT_MASTER_RESPONSE - CNT_MASTER_EXCEPTION - CNT_MASTER_IGNORED
+ *  Responses still pending =
+ *    CNT_MASTER_QUERY - CNT_MASTER_RESPONSE* - CNT_MASTER_TIMEOUT
+ *  * - Although rogue stations on the bus might send extra responses
+ *      that do not correspond to a query.
+ */
+enum CounterId
 {
-    MB_FC_READ_COILS,
-    MB_FC_READ_DISCRETE_INPUTS,
-    MB_FC_READ_HOLDING_REGISTERS,
-    MB_FC_READ_INPUT_REGISTER,
-    MB_FC_WRITE_SINGLE_COIL,
-    MB_FC_WRITE_SINGLE_REGISTER,
-    MB_FC_WRITE_MULTIPLE_COILS,
-    MB_FC_WRITE_MULTIPLE_REGISTERS
+    // Counters defined in MODBUS Protocol for slaves:
+
+    CNT_BUS_MESSAGE       = 0, ///< Valid messages seen on the bus.
+    CNT_BUS_COMM_ERROR    = 1, ///< CRC fails, and gibberish.
+    CNT_SLAVE_EXCEPTION   = 2, ///< Slave: Exception responses sent
+    CNT_SLAVE_MESSAGE     = 3, ///< Slave: Messages arrived for this server.
+    CNT_SLAVE_NO_RESPONSE = 4, ///< Slave: Messages with no response sent.
+    CNT_SLAVE_NAK         = 5, ///< Slave: NAK (Exception 7) responses sent.
+    CNT_SLAVE_BUSY        = 6, ///< Slave: Busy (Exception 6) responses sent.
+    CNT_BUS_CHAR_OVERRUN  = 7, ///< Too-long messages seen on the bus.
+
+    // Counters used in *this implementation* for masters:
+
+    CNT_MASTER_EXCEPTION = 2, ///< Master: Exception responses received.
+    CNT_MASTER_QUERY     = 3, ///< Master: Queries sent.
+    CNT_MASTER_RESPONSE  = 4, ///< Master: Responses received
+    CNT_MASTER_IGNORED   = 5, ///< Master: Bad responses ignored.
+    CNT_MASTER_TIMEOUT   = 6, ///< Master: timeouts.
+
+    NUM_COUNTERS = 8
 };
 
 

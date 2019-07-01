@@ -47,6 +47,7 @@
 
 #include <inttypes.h>
 #include "Arduino.h"
+#include <avr/wdt.h>
 
 namespace modbus {
 
@@ -67,9 +68,7 @@ protected:
     uint8_t u8txenpin; //!< flow control pin: 0=USB or RS-232 mode, >1=RS-485 mode
     int8_t  i8lastError;
     int     iLastBytesAvailable;
-    uint16_t u16InCnt;
-    uint16_t u16OutCnt;
-    uint16_t u16errCnt;
+    uint16_t u16Counter[NUM_COUNTERS];
     unsigned long  ulT35timer; // Type matches millis() return type.
     uint32_t u32overTime;
 
@@ -83,9 +82,8 @@ protected:
 
 public:
     void start();
-    uint16_t getInCnt() const; //!<number of incoming messages
-    uint16_t getOutCnt() const; //!<number of outcoming messages
-    uint16_t getErrCnt() const; //!<error counter
+    void clearCounters();
+    uint16_t getCounter(uint8_t counterId_) const;
     int8_t   getLastError() const; //!< Get last error (ERR_XXX) or exception (EXC_XXX) code.
     void     clearLastError(); //!< Set last error to 0.
     void setTxendPinOverTime( uint32_t u32overTime );
@@ -145,14 +143,16 @@ private:
     Slave& operator= (const Slave&); //!< Not assignable.
 
     uint8_t u8id; //!< Slave ID: 1..247
+    bool    listenOnlyMode; //! Slave comms disabled.
 
 private:
-    int8_t validateRequest( const uint8_t* buf, uint8_t count ) const;
-    int8_t buildException( uint8_t u8exception, uint8_t* buf ) const;
+    int8_t buildException( uint8_t u8exception, uint8_t* buf );
     int8_t process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize );
     int8_t process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize );
     int8_t process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count );
+    int8_t process_FC7( Mapping& mapping, uint8_t* buf, uint8_t& count );
+    int8_t process_FC8( uint8_t* buf, uint8_t& count );
     int8_t process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count );
 
@@ -161,6 +161,7 @@ public:
 
     void setID( uint8_t u8id ); //!<write new ID for the slave
     uint8_t getID() const; //!<get slave ID between 1 and 247
+    bool isListenOnly() const { return listenOnlyMode; }
 
     int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
     int8_t poll( Mapping& mapping );               //!<cyclic poll for slave
@@ -201,11 +202,10 @@ public:
     int8_t poll( uint16_t *regs, uint8_t u8size ) //!<cyclic poll for slave
         { CHECK_SLAVE(-2); return static_cast<Slave*>(impl)->poll(regs,u8size); }
     uint16_t getInCnt() //!<number of incoming messages
-        { return impl->getInCnt(); }
-    uint16_t getOutCnt() //!<number of outcoming messages
-        { return impl->getOutCnt(); }
+        { return impl->getCounter(CNT_BUS_MESSAGE); }
+    uint16_t getOutCnt(); //!<number of outgoing messages
     uint16_t getErrCnt() //!<error counter
-        { return impl->getErrCnt(); }
+        { return impl->getCounter(CNT_BUS_COMM_ERROR) + impl->getCounter(CNT_BUS_CHAR_OVERRUN); }
     uint8_t getID() //!<get slave ID between 1 and 247
         { CHECK_SLAVE(-2); return static_cast<Slave*>(impl)->getID(); }
     uint8_t getState()
@@ -263,49 +263,33 @@ void Base::start()
 
     while(port->read() >= 0);
     iLastBytesAvailable = 0;
-    u16InCnt = u16OutCnt = u16errCnt = 0;
+    clearCounters();
 }
 
 
 /**
- * @brief
- * Get input messages counter value
- * This can be useful to diagnose communication
+ * @brief  Set all counters to zero.
+ * Called at start-up, and also by the diagnostic reset.
  *
- * @return input messages counter
  * @ingroup buffer
  */
-uint16_t Base::getInCnt() const
+void Base::clearCounters()
 {
-    return u16InCnt;
+    memset(u16Counter, 0, NUM_COUNTERS);
 }
 
 
 /**
- * @brief
- * Get transmitted messages counter value
- * This can be useful to diagnose communication
+ * @brief Get counter value.
  *
- * @return transmitted messages counter
  * @ingroup buffer
  */
-uint16_t Base::getOutCnt() const
+uint16_t Base::getCounter(uint8_t counterId_) const
 {
-    return u16OutCnt;
-}
-
-
-/**
- * @brief
- * Get errors counter value
- * This can be useful to diagnose communication
- *
- * @return errors counter
- * @ingroup buffer
- */
-uint16_t Base::getErrCnt() const
-{
-    return u16errCnt;
+    if (counterId_ < NUM_COUNTERS)
+        return u16Counter[counterId_];
+    else
+        return UINT16_MAX;
 }
 
 
@@ -495,7 +479,7 @@ int8_t Master::query( modbus_t telegram )
     case MB_FC_READ_COILS:
     case MB_FC_READ_DISCRETE_INPUTS:
     case MB_FC_READ_HOLDING_REGISTERS:
-    case MB_FC_READ_INPUT_REGISTER:
+    case MB_FC_READ_INPUT_REGISTERS:
         au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
         au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
         u8BufferSize = 6;
@@ -553,6 +537,7 @@ int8_t Master::query( modbus_t telegram )
     {
         return setError(i8bytes_sent);
     }
+    ++u16Counter[CNT_MASTER_QUERY];
     u32timeOut = millis();
     u8state = COM_WAITING;
     return 0;
@@ -581,6 +566,7 @@ int8_t Master::poll()
     if (timeOutExpired())
     {
         u8state = COM_IDLE;
+        ++u16Counter[CNT_MASTER_TIMEOUT];
         return setError(ERR_TIME_OUT_EXPIRED);
     }
 
@@ -597,40 +583,54 @@ int8_t Master::poll()
     }
     uint8_t u8BufferSize = i8bytes_read;
 
-    // validate message: id, CRC, FCT, exception
-    const int8_t i8error = validateAnswer( au8Buffer, u8BufferSize );
-    if (i8error != 0)
+    ++u16Counter[CNT_MASTER_RESPONSE];
+
+    // validate message: length, exception
+    int8_t i8error = validateAnswer( au8Buffer, u8BufferSize );
+
+    if (i8error == 0)
     {
-        u8state = COM_IDLE;
-        return setError(i8error);
+        // process answer
+
+        // BUG: Need to check that the response matches the Slave ID and
+        //      function code that we are actually waiting for.
+        //      If the bus has multiple slaves, the current implementation
+        //      could cause chaos.
+
+        switch( au8Buffer[ FUNC ] )
+        {
+        case MB_FC_READ_COILS:
+        case MB_FC_READ_DISCRETE_INPUTS:
+            // call get_FC1 to transfer the incoming message to au16regs buffer
+            // BUG: Need to check bounds of au16regs - response might not fit.
+            get_FC1( au8Buffer, u8BufferSize );
+            break;
+        case MB_FC_READ_INPUT_REGISTERS:
+        case MB_FC_READ_HOLDING_REGISTERS :
+            // call get_FC3 to transfer the incoming message to au16regs buffer
+            // BUG: Need to check bounds of au16regs - response might not fit.
+            get_FC3( au8Buffer, u8BufferSize );
+            break;
+        case MB_FC_WRITE_SINGLE_COIL:
+        case MB_FC_WRITE_SINGLE_REGISTER :
+        case MB_FC_WRITE_MULTIPLE_COILS:
+        case MB_FC_WRITE_MULTIPLE_REGISTERS :
+            // nothing to do
+            break;
+        default:
+            i8error = ERR_FUNC_CODE;
+            break;
+        }
     }
 
-    // process answer
-    switch( au8Buffer[ FUNC ] )
-    {
-    case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUTS:
-        // call get_FC1 to transfer the incoming message to au16regs buffer
-        get_FC1( au8Buffer, u8BufferSize );
-        break;
-    case MB_FC_READ_INPUT_REGISTER:
-    case MB_FC_READ_HOLDING_REGISTERS :
-        // call get_FC3 to transfer the incoming message to au16regs buffer
-        get_FC3( au8Buffer, u8BufferSize );
-        break;
-    case MB_FC_WRITE_SINGLE_COIL:
-    case MB_FC_WRITE_SINGLE_REGISTER :
-    case MB_FC_WRITE_MULTIPLE_COILS:
-    case MB_FC_WRITE_MULTIPLE_REGISTERS :
-        // nothing to do
-        break;
-    default:
-        break;
-    }
     u8state = COM_IDLE;
-    // ?? Currently, there is no bounds checking in get_FCXX() functions, so there
-    // ?? can be no error to report here.
-    return u8BufferSize;
+    if (i8error == 0)
+        return 1; // Response received and processed OK.
+    else if (i8error > 0)
+        ++u16Counter[CNT_MASTER_EXCEPTION];
+    else
+        ++u16Counter[CNT_MASTER_IGNORED];
+    return setError(i8error);
 }
 
 
@@ -660,7 +660,8 @@ int8_t Master::poll()
  */
 Slave::Slave(uint8_t u8id_, Stream& port_, uint8_t u8txenpin_):
     Base(port_, u8txenpin_),
-    u8id(u8id_)
+    u8id(u8id_),
+    listenOnlyMode(false)
 {}
 
 
@@ -735,50 +736,68 @@ int8_t Slave::poll( Mapping& mapping )
     }
     uint8_t u8BufferSize = i8bytes_read;
 
-    // validate message: CRC, and size
-    int8_t i8error = validateRequest( au8Buffer, u8BufferSize );
-    if (i8error==0)
-    {
-        // check slave id
-        if (au8Buffer[ ID ] != u8id)
-            return 0; // This message is for another slave.
+    // check slave id
+    // (id=0 are broadcast messages, which would pass here, if we supported
+    //  any function codes that understood them.)
+    if (au8Buffer[ ID ] != u8id)
+        return 0; // This message is for another slave.
 
-        switch( au8Buffer[ FUNC ] )
-        {
-        case MB_FC_READ_COILS:
-        case MB_FC_READ_DISCRETE_INPUTS:
-            i8error = process_FC1( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
-            break;
-        case MB_FC_READ_INPUT_REGISTER:
-        case MB_FC_READ_HOLDING_REGISTERS :
-            i8error = process_FC3( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
-            break;
-        case MB_FC_WRITE_SINGLE_COIL:
-            i8error = process_FC5( mapping, au8Buffer, u8BufferSize );
-            break;
-        case MB_FC_WRITE_SINGLE_REGISTER :
-            i8error = process_FC6( mapping, au8Buffer, u8BufferSize );
-            break;
-        case MB_FC_WRITE_MULTIPLE_COILS:
-            i8error = process_FC15( mapping, au8Buffer, u8BufferSize );
-            break;
-        case MB_FC_WRITE_MULTIPLE_REGISTERS :
-            i8error = process_FC16( mapping, au8Buffer, u8BufferSize );
-            break;
-        default:
-            i8error = EXC_ILLEGAL_FUNCTION;
-            break;
-        }
+    ++u16Counter[CNT_SLAVE_MESSAGE];
+
+    if (listenOnlyMode && au8Buffer[FUNC] != MB_FC_DIAGNOSTICS)
+    {
+        ++u16Counter[CNT_SLAVE_NO_RESPONSE];
+        return ERR_LISTEN_ONLY_MODE;
     }
+
+    int8_t i8error = 0;
+    switch( au8Buffer[ FUNC ] )
+    {
+    case MB_FC_READ_COILS:
+    case MB_FC_READ_DISCRETE_INPUTS:
+        i8error = process_FC1( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
+        break;
+    case MB_FC_READ_INPUT_REGISTERS:
+    case MB_FC_READ_HOLDING_REGISTERS :
+        i8error = process_FC3( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
+        break;
+    case MB_FC_WRITE_SINGLE_COIL:
+        i8error = process_FC5( mapping, au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_WRITE_SINGLE_REGISTER:
+        i8error = process_FC6( mapping, au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_READ_EXCEPTION_STATUS:
+        i8error = process_FC7( mapping, au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_DIAGNOSTICS:
+        i8error = process_FC8( au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_WRITE_MULTIPLE_COILS:
+        i8error = process_FC15( mapping, au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_WRITE_MULTIPLE_REGISTERS :
+        i8error = process_FC16( mapping, au8Buffer, u8BufferSize );
+        break;
+    default:
+        i8error = EXC_ILLEGAL_FUNCTION;
+        break;
+    }
+
     if (i8error > 0)
     {
+        ++u16Counter[CNT_SLAVE_EXCEPTION];
         u8BufferSize = buildException( i8error, au8Buffer );
         sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
         // Ignore any error reported by sendTxBuffer().
     }
     else if (i8error==0)
     {
-      i8error = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+        i8error = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+    }
+    else
+    {
+        ++u16Counter[CNT_SLAVE_NO_RESPONSE];
     }
     return setError(i8error);
 }
@@ -929,6 +948,15 @@ void Modbus::begin(long u32speed)
 }
 
 
+uint16_t Modbus::getOutCnt()
+{
+    if (is_master)
+        return impl->getCounter(CNT_MASTER_QUERY);
+    else
+        return impl->getCounter(CNT_SLAVE_MESSAGE) - impl->getCounter(CNT_SLAVE_NO_RESPONSE);
+}
+
+
 /* ____PROTECTED FUNCTIONS___BASE____________________________________________ */
 
 /**
@@ -940,9 +968,6 @@ Base::Base(Stream& port_, uint8_t u8txenpin_):
     u8txenpin(u8txenpin_),
     i8lastError(0),
     iLastBytesAvailable(0),
-    u16InCnt(0),
-    u16OutCnt(0),
-    u16errCnt(0),
     ulT35timer(0),
     u32overTime(0)
 {}
@@ -960,7 +985,6 @@ int8_t Base::setError( int8_t i8error )
 {
   if (i8error)
   {
-      ++u16errCnt;
       i8lastError = i8error;
       // Error return values are always <0.
       // If the caller needs to see the specific exception, then they must
@@ -1036,23 +1060,39 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t bufsize )
 {
     // Pre-condition: We know that (port->available() > 0), because
     // rxFrameReady() has returned TRUE.
-    u16InCnt++;
-    uint8_t i = 0;
+    uint8_t count = 0;
     while(true)
     {
       const int c = port->read();
-      if (i < bufsize)
+      if (count < bufsize)
       {
         if (c < 0)
             break;
-        buf[ i++ ] = c;
+        buf[ count++ ] = c;
       }
       else if (c < 0)
       {
+        ++u16Counter[CNT_BUS_CHAR_OVERRUN];
         return ERR_RX_BUFF_OVERFLOW;
       }
     }
-    return i;
+
+    if (count <= 3)
+    {
+        ++u16Counter[CNT_BUS_COMM_ERROR];
+        return ERR_MALFORMED_MESSAGE;
+    }
+
+    // check message crc vs calculated crc
+    const uint16_t u16MsgCRC = word( buf[count - 1], buf[count - 2] );
+    if ( calcCRC( buf, count-2 ) != u16MsgCRC )
+    {
+        ++u16Counter[CNT_BUS_COMM_ERROR];
+        return ERR_BAD_CRC;
+    }
+
+    ++u16Counter[CNT_BUS_MESSAGE];
+    return count;
 }
 
 
@@ -1106,9 +1146,6 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
     }
     while(port->read() >= 0);
 
-    // increase message counter
-    u16OutCnt++;
-
     return 0;
 }
 
@@ -1129,13 +1166,6 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
         return ERR_MALFORMED_MESSAGE;
     }
 
-    // check message crc vs calculated crc
-    const uint16_t u16MsgCRC = word( buf[count - 1], buf[count - 2] );
-    if ( calcCRC( buf, count-2 ) != u16MsgCRC )
-    {
-        return ERR_BAD_CRC;
-    }
-
     // check exception
     if ((buf[ FUNC ] & 0x80) != 0)
     {
@@ -1149,21 +1179,6 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
     if (count < 6) // FC 1 & 2: smallest response is 4 bytes + 2 bytes CRC
     {
         return ERR_MALFORMED_MESSAGE;
-    }
-
-    // check fct code
-    boolean isSupported = false;
-    for (uint8_t i = 0; i< sizeof( fctsupported ); i++)
-    {
-        if (fctsupported[i] == buf[FUNC])
-        {
-            isSupported = 1;
-            break;
-        }
-    }
-    if (!isSupported)
-    {
-        return EXC_ILLEGAL_FUNCTION;
     }
 
     return 0; // OK, no exception code thrown
@@ -1220,36 +1235,27 @@ void Master::get_FC3( const uint8_t* buf, uint8_t /*count*/ )
 
 /**
  * @brief
- * This method validates slave incoming messages
- *
- * @return 0 if OK, EXCEPTION if anything fails
- * @ingroup buffer
- */
-int8_t Slave::validateRequest( const uint8_t* buf, uint8_t count ) const
-{
-    if (count <= 3)
-        return ERR_MALFORMED_MESSAGE;
-
-    // check message crc vs calculated crc
-    const uint16_t u16MsgCRC = word( buf[count - 1], buf[count - 2] );
-    if ( calcCRC( buf, count-2 ) != u16MsgCRC )
-    {
-        return ERR_BAD_CRC;
-    }
-
-    return 0; // OK, no exception code thrown
-}
-
-
-/**
- * @brief
  * This method builds an exception message. The buffer is assumed to be large enough
  * for the exception - which is only 3 bytes long.
  *
  * @ingroup buffer
  */
-int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf ) const
+int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf )
 {
+    switch(u8exception)
+    {
+        case EXC_NEGATIVE_ACKNOWLEDGE:
+            ++u16Counter[CNT_SLAVE_NAK];
+            break;
+
+        case EXC_SERVER_DEVICE_BUSY:
+            ++u16Counter[CNT_SLAVE_BUSY];
+            break;
+
+        default:
+            ;
+    }
+
     buf[ FUNC ] += 0x80;
     buf[ 2 ]     = u8exception;
     return EXCEPTION_SIZE;
@@ -1258,7 +1264,8 @@ int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf ) const
 
 /**
  * @brief
- * This method processes functions 1 & 2
+ * This method processes functions 1 & 2:
+ *   MB_FC_READ_COILS & MB_FC_READ_DISCRETE_INPUTS.
  * This method reads a bit array and transfers it to the master
  *
  * @return u8BufferSize Response to master length
@@ -1268,7 +1275,7 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
 {
     // Validate the request message size.
     if (count != 8)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
     const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
@@ -1291,7 +1298,8 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
 
 /**
  * @brief
- * This method processes functions 3 & 4
+ * This method processes functions 3 & 4:
+ *   MB_FC_READ_HOLDING_REGISTERS & MB_FC_READ_INPUT_REGISTERS.
  * This method reads a word array and transfers it to the master
  *
  * @return u8BufferSize Response to master length
@@ -1301,7 +1309,7 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
 {
     // Validate the request message size.
     if (count != 8)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
     const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
@@ -1315,7 +1323,7 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Read the requested values into buf[3] onwards.
-    if (buf[ FUNC ] == MB_FC_READ_INPUT_REGISTER)
+    if (buf[ FUNC ] == MB_FC_READ_INPUT_REGISTERS)
         return mapping.read_input_registers(buf + 3, addr, quantity);
     else
         return mapping.read_holding_registers(buf + 3, addr, quantity);
@@ -1324,7 +1332,7 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
 
 /**
  * @brief
- * This method processes function 5
+ * This method processes function 5: MB_FC_WRITE_SINGLE_COIL
  * This method writes a value assigned by the master to a single bit
  *
  * @return count Response to master length
@@ -1334,7 +1342,7 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
     if (count != 8)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
     const uint16_t value = word( buf[ NB_HI  ], buf[ NB_LO  ] );
@@ -1353,7 +1361,7 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
 
 /**
  * @brief
- * This method processes function 6
+ * This method processes function 6: MB_FC_WRITE_SINGLE_REGISTER
  * This method writes a value assigned by the master to a single word
  *
  * @return count Response to master length
@@ -1363,7 +1371,7 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
     if (count != 8)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr = word( buf[ ADD_HI ], buf[ ADD_LO ] );
 
@@ -1377,7 +1385,101 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
 
 /**
  * @brief
- * This method processes function 15
+ * This method processes function 7: MB_FC_READ_EXCEPTION_STATUS
+ * This method read a byte from the slave. The byte is interpreted
+ * as eight server-defined exception registers.
+ *
+ * @return count Response to master length
+ * @ingroup register
+ */
+int8_t Slave::process_FC7( Mapping& mapping, uint8_t* buf, uint8_t& count )
+{
+    // Validate the request message size.
+    if (count != 4)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    count = 3;
+    return mapping.read_exception_status(buf + 2);
+}
+
+
+/**
+ * @brief
+ * This method processes function 8: MB_FC_DIAGNOSTICS
+ *
+ * @return count Response to master length
+ * @ingroup register
+ */
+int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
+{
+    // Validate the request message size.
+    if (count < 8)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    const uint16_t subfunction = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+
+    if (listenOnlyMode && subfunction != 0x01)
+        return ERR_LISTEN_ONLY_MODE;
+
+    // Normal response is just to echo the request. Lop off the CRC...
+    count -= 2;
+
+    switch(subfunction)
+    {
+    case 0x00: // Return query data
+        return 0;
+
+    case 0x01: // Restart communications.
+        // Must send reply immediately, before the reboot.
+        if (!listenOnlyMode)
+            sendTxBuffer(buf, count, count+2);
+        // Use the watchdog timer to restart the board.
+        wdt_disable();
+        wdt_enable(WDTO_15MS);
+        while (true) {}
+        // ...never returns
+
+    case 0x02: // Return Diagnostic Register
+    case 0x03: // Change ASCII Input Delimiter
+        // We don't support this subfunction
+        break;
+
+    case 0x04: // Force listen-only mode.
+        listenOnlyMode = true;
+        return ERR_LISTEN_ONLY_MODE;
+
+    case 0x0A: // Clear Counters and Diagnostic Register
+        clearCounters();
+        return 0;
+
+    case 0x0B: // Return Bus Message Count
+    case 0x0C: // Return Bus Communication Error Count
+    case 0x0D: // Return Bus Exception Error Count
+    case 0x0E: // Return Slave Message Count
+    case 0x0F: // Return Slave No Response Count
+    case 0x10: // Return Slave NAK Count
+    case 0x11: // Return Slave Busy Count
+    case 0x12: // Return Bus Character Overrun Count
+        *(uint16_t*)(buf + 4) = bswap16( u16Counter[subfunction - 0x0B] );
+        return 0;
+
+    case 0x14: // Clear Overrun Counter ("and Flag")
+        u16Counter[CNT_BUS_CHAR_OVERRUN] = 0;
+        // Flush the buffers, while we are about it.
+        port->flush();
+        while(port->read() >= 0);
+        return 0;
+
+    default:
+        break;
+    };
+    return EXC_ILLEGAL_FUNCTION;
+}
+
+
+/**
+ * @brief
+ * This method processes function 15: MB_FC_WRITE_MULTIPLE_COILS
  * This method writes a bit array assigned by the master
  *
  * @return count Response to master length
@@ -1387,7 +1489,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
     if (count < 10)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
     const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
@@ -1398,7 +1500,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
         return EXC_ILLEGAL_DATA_VALUE;
 
     if (count != n + 9)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     // Response is just the first 6 bytes of the request.
     count = 6;
@@ -1410,7 +1512,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
 
 /**
  * @brief
- * This method processes function 16
+ * This method processes function 16: MB_FC_WRITE_MULTIPLE_REGISTERS
  * This method writes a word array assigned by the master
  *
  * @return count Response to master length
@@ -1420,7 +1522,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
     if (count < 11)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
     const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
@@ -1431,7 +1533,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
         return EXC_ILLEGAL_DATA_VALUE;
 
     if (count != n + 9)
-        return ERR_MALFORMED_MESSAGE;
+        return EXC_ILLEGAL_DATA_VALUE;
 
     // Response is just the first 6 bytes of the request.
     count = 6;

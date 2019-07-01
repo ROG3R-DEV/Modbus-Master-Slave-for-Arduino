@@ -195,10 +195,16 @@ public:
   Mapping(RegisterBlock& holding_register_block, CoilBlock& coil_block);
 
   /** Return TRUE if any block has been modified. */
-  bool is_dirty() const { return dirty; }
+  bool is_dirty() const
+    { return dirty; }
 
   /** Clear the "dirty" flag. */
   void set_clean();
+
+  /** May be overridden to write a single byte to *dest.
+   *  Interpreted as eight server-defined exception status flags. */
+  virtual int8_t read_exception_status(uint8_t* dest)
+    { (void)dest; return EXC_ILLEGAL_FUNCTION; }
 
   //
   // Coils (read/write boolean values).

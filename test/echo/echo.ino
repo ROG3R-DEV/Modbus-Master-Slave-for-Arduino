@@ -189,9 +189,9 @@ void poll()
       Serial.print(F("  poll: slave=")); Serial.print(slave_poll_result);
       Serial.print(F(" master="));     Serial.print(master_poll_result);
       Serial.print(F(" st:"));   Serial.print(master.getState());
-      Serial.print(F(" out:"));  Serial.print(master.getOutCnt());
-      Serial.print(F(" in:"));   Serial.print(master.getInCnt());
-      Serial.print(F(" err:"));  Serial.print(master.getErrCnt());
+      Serial.print(F(" queries:"));  Serial.print(master.getCounter(CNT_MASTER_QUERY));
+      Serial.print(F(" responses:"));   Serial.print(master.getCounter(CNT_MASTER_RESPONSE));
+      Serial.print(F(" exceptions:"));  Serial.print(master.getCounter(CNT_MASTER_EXCEPTION));
       Serial.print(F(" last:")); Serial.print(master.getLastError());
       Serial.println("");
 #endif
@@ -251,7 +251,7 @@ void test_holding_register(uint16_t reg_addr)
 
 void test_oob_holding_register()
 {
-  uint16_t errcnt0 = master.getErrCnt();
+  uint16_t errcnt0 = master.getCounter(CNT_MASTER_EXCEPTION);
 
   slave.clearLastError();
   master.clearLastError();
@@ -260,7 +260,7 @@ void test_oob_holding_register()
   test_equal(
       "test_oob_holding_register, non-existent",
       slave_data_count,
-      master.getErrCnt(),
+      master.getCounter(CNT_MASTER_EXCEPTION),
       errcnt0+1
     );
   test_equal(
@@ -312,12 +312,12 @@ void test_oob_holding_register()
 
 void test_holding_registers()
 {
-  uint16_t errcnt0 = master.getErrCnt();
+  uint16_t errcnt0 = master.getCounter(CNT_MASTER_EXCEPTION);
   for(uint16_t reg_addr=0; reg_addr<slave_data_count; ++reg_addr)
   {
     test_holding_register(reg_addr);
   }
-  test_equal("test_holding_registers, errcnt", 0, master.getErrCnt(), errcnt0);
+  test_equal("test_holding_registers, errcnt", 0, master.getCounter(CNT_MASTER_EXCEPTION), errcnt0);
 
   // Test for correct handling of an out-of-bounds register.
   test_oob_holding_register();
@@ -381,12 +381,12 @@ void test_coil(uint16_t reg_addr)
 
 void test_coils()
 {
-  uint16_t errcnt0 = master.getErrCnt();
+  uint16_t errcnt0 = master.getCounter(CNT_MASTER_EXCEPTION);
   for(uint16_t reg_addr=0; reg_addr<(slave_data_count*16); ++reg_addr)
   {
     test_coil(reg_addr);
   }
-  test_equal("test_coils, errcnt", 0, master.getErrCnt(), errcnt0);
+  test_equal("test_coils, errcnt", 0, master.getCounter(CNT_MASTER_EXCEPTION), errcnt0);
 
   // Test for correct handling of a non-existent register.
   // Currently FAILS, because the slave does not check its bounds.
@@ -394,7 +394,7 @@ void test_coils()
   master.clearLastError();
   expect.set_all(ERR_EXCEPTION);
   read_coil(slave_data_count*16);
-  test_equal("test_coils, non-existent",0,master.getErrCnt(),errcnt0+1);
+  test_equal("test_coils, non-existent",0,master.getCounter(CNT_MASTER_EXCEPTION),errcnt0+1);
   test_equal(
       "test_coils, non-existent: slave error code",
       0,
@@ -429,7 +429,7 @@ void fill_array_with_test_data(uint16_t* arr, uint16_t len)
 /** Read/write multiple registers. */
 void test_multiple_registers()
 {
-  const uint16_t errcnt0 = master.getErrCnt();
+  const uint16_t errcnt0 = master.getCounter(CNT_MASTER_EXCEPTION);
   const uint16_t max_num = min(slave_data_count, master_data_count);
   for(uint16_t num=2; num<max_num; ++num)
   {
@@ -454,7 +454,7 @@ void test_multiple_registers()
       test_equal("test_multiple_registers, write", test_id, crc1, crc0);
     }
   }
-  test_equal("test_multiple_registers, master errCnt",0,master.getErrCnt(),errcnt0);
+  test_equal("test_multiple_registers, master errCnt",0,master.getCounter(CNT_MASTER_EXCEPTION),errcnt0);
 }
 
 
@@ -484,7 +484,7 @@ void test_equal_bits(const char* type, uint16_t testno, uint16_t quantity, uint8
 /** Read/write multiple coils. */
 void test_multiple_coils()
 {
-  const uint16_t errcnt0 = master.getErrCnt();
+  const uint16_t errcnt0 = master.getCounter(CNT_MASTER_EXCEPTION);
   const uint16_t max_num = 16*min(slave_data_count, master_data_count);
   uint16_t test_id = 0;
   for(uint16_t num=2; num<max_num; num+=3)
@@ -529,7 +529,7 @@ void test_multiple_coils()
       test_equal_bits("test_multiple_coils, write", test_id, num, (uint8_t*)(telegram.au16reg), (uint8_t*)slave_data, reg_addr);
     }
   }
-  test_equal("test_multiple_coils, master errCnt",0,master.getErrCnt(),errcnt0);
+  test_equal("test_multiple_coils, master errCnt",0,master.getCounter(CNT_MASTER_EXCEPTION),errcnt0);
 }
 
 
@@ -602,7 +602,7 @@ void loop()
   test_multiple_registers();
   test_multiple_coils();
 
-  test_equal("master error count", 0, master.getErrCnt(), 3);
+  test_equal("master error count", 0, master.getCounter(CNT_MASTER_EXCEPTION), 3);
 
   Serial.print(F("DONE. Passed "));
   Serial.print(pass_count);
