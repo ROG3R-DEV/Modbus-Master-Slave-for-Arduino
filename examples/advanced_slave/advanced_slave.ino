@@ -156,18 +156,18 @@ void blink(int8_t times, int delay_ms) {
 
 /*********************************************************
   ES: Reporte el estado de error parpadeando el LED incorporado.
-      Número de destellos cortos = estado de error interno.
-      Número de destellos largos = número de excepción.
+      NÃºmero de destellos cortos = estado de error interno.
+      NÃºmero de destellos largos = nÃºmero de excepciÃ³n.
 
   EN: Report error status by blinking the built-in LED.
       Number of short flashes = internal error state.
       Number of long flashes = exception number.
 *********************************************************/
 void report_error(int8_t err) {
-  // ES: Los códigos de error internos son negativos. (ERR_XXX)
+  // ES: Los cÃ³digos de error internos son negativos. (ERR_XXX)
   // EN: Internal error codes are negative. (ERR_XXX)
   if (err < 0) {
-      // ES: Parpadea el LED "err" veces, rápido.
+      // ES: Parpadea el LED "err" veces, rÃ¡pido.
       // EN: Blink the LED "err" times, fast.
       blink( -err, 400 );
       // ES: Para excepciones, parpadea el LED "exc" veces, lento.
