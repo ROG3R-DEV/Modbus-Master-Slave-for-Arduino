@@ -7,7 +7,7 @@
  *  http://www.modbusdriver.com/modpoll.html
  */
 
-#include <ModbusRtu.h>
+#include <ModbusSlave.h>
 
 // data array for modbus network sharing
 uint16_t au16data[16] = {

@@ -14,7 +14,7 @@
  *		RTU mode and address @1
  */
 
-#include <ModbusRtu.h>
+#include <ModbusMaster.h>
 
 // data array for modbus network sharing
 uint16_t au16data[16];

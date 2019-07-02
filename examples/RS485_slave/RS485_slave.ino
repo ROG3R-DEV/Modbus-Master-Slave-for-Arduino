@@ -7,7 +7,7 @@
  *  http://qmodbus.sourceforge.net/
  */
 
-#include <ModbusRtu.h>
+#include <ModbusSlave.h>
 
 // assign the Arduino pin that must be connected to RE-DE RS485 transceiver
 #define TXEN  4 

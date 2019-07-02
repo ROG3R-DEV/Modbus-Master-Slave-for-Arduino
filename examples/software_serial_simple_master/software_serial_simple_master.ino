@@ -41,7 +41,7 @@
  This example code is in the public domain.
  */
 
-#include <ModbusRtu.h>
+#include <ModbusMaster.h>
 #include <SoftwareSerial.h>
 
 // data array for modbus network sharing

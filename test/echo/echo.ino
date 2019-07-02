@@ -9,7 +9,8 @@
 // Cut down on inter-frame delays - not needed in loopback.
 #define T35 1
 
-#include <ModbusRtu.h>
+#include <ModbusMaster.h>
+#include <ModbusSlave.h>
 #include "src/loopback.h"
 
 // Set to 1, to report PASSes as well as FAILures.

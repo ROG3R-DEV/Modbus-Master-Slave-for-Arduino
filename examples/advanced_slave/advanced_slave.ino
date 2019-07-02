@@ -11,7 +11,7 @@
 
 // ES: Incluye la librería del protocolo Modbus
 // EN: Include the MODBUS protocol library.
-#include <ModbusRtu.h>
+#include <ModbusSlave.h>
 #define ID   1
 
 // ES: Crear instancia
