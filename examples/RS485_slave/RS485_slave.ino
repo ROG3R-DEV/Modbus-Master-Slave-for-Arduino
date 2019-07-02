@@ -17,7 +17,7 @@ uint16_t au16data[16] = {
   3, 1415, 9265, 4, 2, 7182, 28182, 8, 0, 0, 0, 0, 0, 0, 1, (uint16_t)-1 };
 
 // Holding registers traditionally start at address 40000.
-RegisterBlock rb(au16data, 16, 40000);
+RegisterBlockData rb(au16data, 16, 40000);
 Mapping mapping(rb);
 
 
