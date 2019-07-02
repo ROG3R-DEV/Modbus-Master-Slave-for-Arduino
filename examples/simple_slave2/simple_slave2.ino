@@ -14,9 +14,9 @@ uint16_t au16data[16] = {
   3, 1415, 9265, 4, 2, 7182, 28182, 8, 0, 0, 0, 0, 0, 0, 1, (uint16_t)-1 };
 
 // Holding registers (read/write 16-bit values) traditionally start at address 40000.
-RegisterBlock rb( au16data, 16, 40000 );
+RegisterBlockData rb( au16data, 16, 40000 );
 // Coils (read/write bits) traditionally start at address 0.
-CoilBlock cb( (uint8_t*)au16data, 16*16, 0);
+CoilBlockData cb( (uint8_t*)au16data, 16*16, 0);
 Mapping mapping( rb, cb );
 
 /**
