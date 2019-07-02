@@ -140,6 +140,7 @@ uint16_t Base::calcCRC(const void* data, uint8_t len)
 Base::Base(Stream& port_, uint8_t u8txenpin_):
     port(&port_),
     u8txenpin(u8txenpin_),
+    t35(5), // Default to 5ms inter-frame delay
     i8lastError(0),
     iLastBytesAvailable(0),
     ulT35timer(0),
@@ -198,7 +199,7 @@ bool Base::rxFrameReady()
         if (bytesAvailable == iLastBytesAvailable)
         {
             // The serial port has now buffered the entire frame.
-            if (T35==0 || (now - ulT35timer) >= (unsigned long)T35)
+            if (t35==0 || (now - ulT35timer) >= (unsigned long)t35)
             {
                 // The T35 timer has expired.
                 // Reset, ready for the next frame.

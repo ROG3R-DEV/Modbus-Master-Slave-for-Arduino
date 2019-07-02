@@ -6,9 +6,6 @@
  * Test failures are reported to Serial, labelled "FAIL".
  */
 
-// Cut down on inter-frame delays - not needed in loopback.
-#define T35 1
-
 #include <ModbusMaster.h>
 #include <ModbusSlave.h>
 #include "src/loopback.h"
@@ -42,7 +39,7 @@ Master master(master_stream,0);
 const uint8_t slave_id = 1;
 const uint16_t slave_data_count = 9;
 uint16_t slave_data[slave_data_count+1]; ///< Include extra OOB register
-CoilBlockData coil_block((uint8_t*)slave_data, 16*slave_data_count);
+CoilBlockData coil_block(slave_data, 16*slave_data_count);
 RegisterBlockData reg_block(slave_data, slave_data_count);
 Mapping mapping(reg_block, coil_block);
 int8_t slave_poll_result;
@@ -573,6 +570,10 @@ void setup()
 {
   Serial.begin(115200);
   Serial.println(F(__FILE__ "  Build: " __DATE__ ", " __TIME__));
+
+  // Cut down on inter-frame delays - not needed in loopback.
+  master.setT35(0);
+  slave.setT35(0);
 
   master_stream.connect(slave_stream);
 }

@@ -22,6 +22,7 @@ private:
 protected:
     Stream* port; //!< Pointer to Stream class object (Either HardwareSerial or SoftwareSerial)
     uint8_t u8txenpin; //!< flow control pin: 0=USB or RS-232 mode, >1=RS-485 mode
+    uint8_t t35;
     int8_t  i8lastError;
     int     iLastBytesAvailable;
     uint16_t u16Counter[NUM_COUNTERS];
@@ -42,6 +43,7 @@ public:
     uint16_t getCounter(uint8_t counterId_) const;
     int8_t   getLastError() const; //!< Get last error (ERR_XXX) or exception (EXC_XXX) code.
     void     clearLastError(); //!< Set last error to 0.
+    void setT35(uint8_t v) { t35 = v; }
     void setTxendPinOverTime( uint32_t u32overTime );
 
     static uint16_t calcCRC( const void* data, uint8_t len );
@@ -51,9 +53,5 @@ public:
 
 
 } // end namespace modbus
-
-#if !defined(USING_MODBUS_NAMESPACE) || USING_MODBUS_NAMESPACE!=0
-using namespace modbus;
-#endif
 
 #endif // MODBUS_MODBUS_BASE_H
