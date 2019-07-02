@@ -105,10 +105,9 @@ int8_t Master::query( modbus_t telegram )
     uint8_t u8BufferSize;
 
     // telegram header
-    au8Buffer[ ID ]         = telegram.u8id;
-    au8Buffer[ FUNC ]       = telegram.u8fct;
-    au8Buffer[ ADD_HI ]     = highByte(telegram.u16RegAdd );
-    au8Buffer[ ADD_LO ]     = lowByte( telegram.u16RegAdd );
+    au8Buffer[ ID ]   = telegram.u8id;
+    au8Buffer[ FUNC ] = telegram.u8fct;
+    marshal_u16( au8Buffer + ADD_HI, telegram.u16RegAdd );
 
     switch( telegram.u8fct )
     {
@@ -116,51 +115,34 @@ int8_t Master::query( modbus_t telegram )
     case MB_FC_READ_DISCRETE_INPUTS:
     case MB_FC_READ_HOLDING_REGISTERS:
     case MB_FC_READ_INPUT_REGISTERS:
-        au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
-        au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
+        marshal_u16( au8Buffer + NB_HI, telegram.u16CoilsNo );
         u8BufferSize = 6;
         break;
     case MB_FC_WRITE_SINGLE_COIL:
-        au8Buffer[ NB_HI ]      = ((au16regs[0] > 0) ? 0xff : 0);
-        au8Buffer[ NB_LO ]      = 0;
+        au8Buffer[ NB_HI ] = ((au16regs[0] > 0) ? 0xff : 0);
+        au8Buffer[ NB_LO ] = 0;
         u8BufferSize = 6;
         break;
     case MB_FC_WRITE_SINGLE_REGISTER:
-        au8Buffer[ NB_HI ]      = highByte(au16regs[0]);
-        au8Buffer[ NB_LO ]      = lowByte(au16regs[0]);
+        marshal_u16( au8Buffer + NB_HI, au16regs[0] );
         u8BufferSize = 6;
         break;
     case MB_FC_WRITE_MULTIPLE_COILS:
-        au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
-        au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
-        au8Buffer[ BYTE_CNT ]   = (telegram.u16CoilsNo + 7)/8;
-        u8BufferSize = 7;
-
-        for (uint8_t i = 0; i < au8Buffer[ BYTE_CNT ]; i++)
-        {
-            if(i%2)
-            {
-                au8Buffer[ u8BufferSize ] = lowByte( au16regs[ i/2 ] );
-            }
-            else
-            {
-                au8Buffer[ u8BufferSize ] = highByte( au16regs[ i/2] );
-            }          
-            u8BufferSize++;
-        }
+        marshal_u16( au8Buffer + NB_HI, telegram.u16CoilsNo );
+        au8Buffer[ BYTE_CNT ] = (telegram.u16CoilsNo + 7)/8;
+        u8BufferSize = 7 + au8Buffer[ BYTE_CNT ];
+        // ?? ASSUMING MACHINE IS LITTLE-ENDIAN ??
+        memcpy( au8Buffer + 7, au16regs, au8Buffer[ BYTE_CNT ] );
         break;
     case MB_FC_WRITE_MULTIPLE_REGISTERS:
-        au8Buffer[ NB_HI ]      = highByte(telegram.u16CoilsNo );
-        au8Buffer[ NB_LO ]      = lowByte( telegram.u16CoilsNo );
-        au8Buffer[ BYTE_CNT ]    = (uint8_t) ( telegram.u16CoilsNo * 2 );
+        marshal_u16( au8Buffer + NB_HI, telegram.u16CoilsNo );
+        au8Buffer[ BYTE_CNT ] = static_cast<uint8_t>( telegram.u16CoilsNo * 2 );
         u8BufferSize = 7;
 
         for (uint16_t i=0; i< telegram.u16CoilsNo; i++)
         {
-            au8Buffer[ u8BufferSize ] = highByte( au16regs[ i ] );
-            u8BufferSize++;
-            au8Buffer[ u8BufferSize ] = lowByte( au16regs[ i ] );
-            u8BufferSize++;
+            marshal_u16( au8Buffer + u8BufferSize, au16regs[ i ] );
+            u8BufferSize += 2;
         }
         break;
 
@@ -314,19 +296,18 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
  */
 void Master::get_FC1( const uint8_t* buf, uint8_t /*count*/ )
 {
-     uint8_t u8byte = 3;
-     for (uint8_t i=0; i< buf[2]; i++) {
-        
-        if(i%2)
-        {
-            au16regs[i/2]= word(buf[i+u8byte], lowByte(au16regs[i/2]));
-        }
-        else
-        {
-            au16regs[i/2]= word(0, buf[i+u8byte]); 
-        }
-        
-     }
+    // Tell the compiler that buf & au16regs point to different memory.
+    const uint8_t* const __restrict__ buf_data  = buf + 3;
+    uint16_t*      const __restrict__ user_data = au16regs;
+
+    const uint8_t byte_count = buf[ 2 ];
+
+    // Make sure the high byte of the last word we write is zeroed.
+    if (byte_count % 2)
+        user_data[ byte_count/2 ] = 0;
+
+    // ?? ASSUMING MACHINE IS LITTLE-ENDIAN ??
+    memcpy(user_data, buf_data, byte_count);
 }
 
 
@@ -336,17 +317,16 @@ void Master::get_FC1( const uint8_t* buf, uint8_t /*count*/ )
  *
  * @ingroup register
  */
-void Master::get_FC3( const uint8_t* buf, uint8_t /*count*/ )
+void Master::get_FC3( const uint8_t* __restrict__ buf, uint8_t /*count*/ )
 {
-    uint8_t u8byte, i;
-    u8byte = 3;
+    // Tell the compiler that buf & au16regs point to different memory.
+    const uint8_t* const __restrict__  buf_data  = buf + 3;
+    uint16_t*      const __restrict__  user_data = au16regs;
 
-    for (i=0; i< buf[ 2 ] /2; i++)
+    const uint8_t num_registers = buf[ 2 ] / 2;
+    for (uint8_t i=0; i<num_registers; i++)
     {
-        au16regs[ i ] = word(
-                            buf[ u8byte ],
-                            buf[ u8byte +1 ]);
-        u8byte += 2;
+        user_data[ i ] = demarshal_u16( buf_data + (i*2) );
     }
 }
 

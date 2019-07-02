@@ -103,7 +103,7 @@ CoilBlockData::CoilBlockData(
     uint16_t  start_address_
   ):
     CoilBlock(length_, start_address_),
-    data_bytes((uint8_t*)data_words_)
+    data_bytes(reinterpret_cast<uint8_t*>(data_words_))
 {}
 
 
@@ -142,7 +142,7 @@ int8_t RegisterBlock::write_many(
   int8_t result = 0;
   while(quantity && (dst_addr - start_address) < length)
   {
-    result = write_one(dst_addr, bswap16(*(uint16_t*)(src.byte)));
+    result = write_one(dst_addr, demarshal_u16(src.byte));
     if(result != 0)
         break;
 
@@ -168,7 +168,7 @@ int8_t RegisterBlock::read_many(
     if(result != 0)
         break;
 
-    *(uint16_t*)(dest.byte) = bswap16(value);
+    marshal_u16(dest.byte, value);
     ++src_addr;
     dest.byte += 2;
     --quantity;
@@ -430,7 +430,7 @@ Block* Mapping::find_addresses(
 int8_t Mapping::write_many(
     Block*   block,
     uint16_t dest_addr,
-    uint8_t* src_byte,
+    uint8_t*  src_byte,
     uint16_t quantity
   )
 {
@@ -456,7 +456,7 @@ int8_t Mapping::write_many(
 
 int8_t Mapping::read_many(
     Block*   block,
-    uint8_t* dest_byte,
+    uint8_t*  dest_byte,
     uint16_t src_addr,
     uint16_t quantity
   ) const

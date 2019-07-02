@@ -223,8 +223,8 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
     if (count != 8)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr     = demarshal_u16( buf + ADD_HI );
+    const uint16_t quantity = demarshal_u16( buf + NB_HI );
 
     // Set the message size.
     buf[ 2 ] = (quantity+7)/8;
@@ -257,8 +257,8 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
     if (count != 8)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr     = demarshal_u16( buf + ADD_HI );
+    const uint16_t quantity = demarshal_u16( buf + NB_HI );
 
     // Set the message size.
     buf[ 2 ] = quantity * 2;
@@ -290,8 +290,8 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count != 8)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t addr  = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    const uint16_t value = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr  = demarshal_u16( buf + ADD_HI );
+    const uint16_t value = demarshal_u16( buf + NB_HI );
 
     // Validate the value.
     if(value != 0x0000  &&  value != 0xFF00)
@@ -319,7 +319,7 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count != 8)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t addr = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t addr = demarshal_u16( buf + ADD_HI );
 
     // Response is just the first 6 bytes of the request.
     count = 6;
@@ -362,7 +362,7 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
     if (count < 8)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t subfunction = word( buf[ ADD_HI ], buf[ ADD_LO ] );
+    const uint16_t subfunction = demarshal_u16( buf + ADD_HI );
 
     if (listenOnlyMode && subfunction != 0x01)
         return ERR_LISTEN_ONLY_MODE;
@@ -406,7 +406,7 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
     case 0x10: // Return Slave NAK Count
     case 0x11: // Return Slave Busy Count
     case 0x12: // Return Bus Character Overrun Count
-        *(uint16_t*)(buf + 4) = bswap16( u16Counter[subfunction - 0x0A] );
+        marshal_u16(buf + 4, u16Counter[subfunction - 0x0A]);
         return 0;
 
     case 0x14: // Clear Overrun Counter ("and Flag")
@@ -450,8 +450,8 @@ int8_t Slave::process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count )
     const uint16_t comm_event_count =
         u16Counter[CNT_SLAVE_MESSAGE] - u16Counter[CNT_SLAVE_EXCEPTION]
         - u16Counter[CNT_SLAVE_NO_RESPONSE] - u16Counter[CNT_CALLS_TO_FC11];
-    
-    *(uint16_t*)(buf + 4) = bswap16(comm_event_count);
+
+    marshal_u16(buf + 4, comm_event_count);
     return 0;
 }
 
@@ -470,8 +470,8 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count < 10)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr     = demarshal_u16( buf + ADD_HI );
+    const uint16_t quantity = demarshal_u16( buf + NB_HI );
     const uint8_t  n        = buf[ 6 ];
 
     // Validate the quantity.
@@ -503,8 +503,8 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if (count < 11)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    const uint16_t addr     = word( buf[ ADD_HI ], buf[ ADD_LO ] );
-    const uint16_t quantity = word( buf[ NB_HI  ], buf[ NB_LO  ] );
+    const uint16_t addr     = demarshal_u16( buf + ADD_HI );
+    const uint16_t quantity = demarshal_u16( buf + NB_HI );
     const uint8_t  n        = buf[ 6 ];
 
     // Validate the quantity.

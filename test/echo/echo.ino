@@ -508,10 +508,6 @@ void test_multiple_coils()
       {
         poll();
       }
-      // Master::query() uses the data in telegram.au16reg in an ideosyncratic
-      // way. Swap byte pairs so that it matches the expected output.
-      for(size_t w=0; w<master_data_count+1; ++w)
-          telegram.au16reg[w] = bswap16(telegram.au16reg[w]);
 
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
       for(size_t i=0; i<slave_data_count+1; ++i)

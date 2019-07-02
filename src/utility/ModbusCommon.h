@@ -204,9 +204,22 @@ inline uint16_t bswap16(uint16_t v)
 }
 
 
-#if !defined(T35)
-#define T35  5
-#endif
+/** Write a uint16_t into the buffer buf, in big-endian byte order. */
+inline void marshal_u16(uint8_t* __restrict__ buf, const uint16_t& __restrict__ v) __attribute__((always_inline));
+inline void marshal_u16(uint8_t* __restrict__ buf, const uint16_t& __restrict__ v)
+{
+    buf[0] = v >> 8;
+    buf[1] = v & 0xFF;
+}
+
+
+/** Read a uint16_t from the buffer buf, in big-endian byte order. */
+inline uint16_t demarshal_u16(const uint8_t* buf) __attribute__((always_inline));
+inline uint16_t demarshal_u16(const uint8_t* buf)
+{
+    return (buf[0] << 8) | buf[1];
+}
+
 
 #if !defined(MAX_BUFFER)
 #define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
