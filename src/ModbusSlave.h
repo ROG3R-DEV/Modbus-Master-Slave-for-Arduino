@@ -35,9 +35,9 @@
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include "utility/Mapping.h"
 #include "utility/ModbusBase.h"
 #include "utility/ModbusCommon.h"
-#include "utility/ModbusData.h"
 
 namespace modbus {
 
