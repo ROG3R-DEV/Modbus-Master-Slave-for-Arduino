@@ -1,7 +1,7 @@
 /**
  * @file        ModbusRtu.h
- * @version     1.22
- * @date        2019.06.29
+ * @version     1.23
+ * @date        2019.07.02
  * @author      Samuel Marco i Armengol
  * @contact     sammarcoarmengol@gmail.com
  * @contribution Helium6072
