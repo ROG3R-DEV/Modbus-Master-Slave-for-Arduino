@@ -29,46 +29,43 @@ uint16_t Block::have_address(uint16_t addr) const
 // CoilBlock
 
 int8_t CoilBlock::write_many(
-    uint16_t& dest_addr,
-    Position& src,
-    uint16_t& quantity
+    uint16_t& __restrict__ dest_addr,
+    Position&              src,
+    uint16_t& __restrict__ quantity
   )
 {
-  const uint16_t end_addr = min(dest_addr + quantity, start_address + length);
-
-  int8_t result = 0;
-  for(size_t addr=dest_addr; addr<end_addr; ++addr)
+  int8_t err = 0;
+  while(quantity && dest_addr < (start_address + length))
   {
     bool v = bitRead(*src.byte, src.bitn);
+    err = write_one(dest_addr, v);
+    if(err != 0)
+        break;
+
     src.bitn = 0x07 & (src.bitn + 1);
     if(src.bitn == 0)
     {
       ++src.byte;
     }
+    ++dest_addr;
     --quantity;
-
-    result = write_one(addr, v);
-    if(result != 0)
-        break;
   }
-  return result;
+  return err;
 }
 
 
 int8_t CoilBlock::read_many(
-    Position& dest,
-    uint16_t& src_addr,
-    uint16_t& quantity
+    Position&              dest,
+    uint16_t& __restrict__ src_addr,
+    uint16_t& __restrict__ quantity
   ) const
 {
-  const uint16_t end_addr = min(src_addr + quantity, start_address + length);
-
-  int8_t result = 0;
-  for(size_t addr=src_addr; addr<end_addr; ++addr)
+  int8_t err = 0;
+  while(quantity && src_addr < (start_address + length))
   {
     bool v;
-    result = read_one(addr, v);
-    if(result != 0)
+    err = read_one(src_addr, v);
+    if(err != 0)
         break;
 
     bitWrite(*dest.byte, dest.bitn, v);
@@ -78,9 +75,10 @@ int8_t CoilBlock::read_many(
       ++dest.byte;
       *dest.byte = 0;
     }
+    ++src_addr;
     --quantity;
   }
-  return result;
+  return err;
 }
 
 
@@ -134,38 +132,38 @@ int8_t CoilBlockData::read_one(uint16_t src_addr, bool& value) const
 // RegisterBlock
 
 int8_t RegisterBlock::write_many(
-    uint16_t& dst_addr,
-    Position& src,
-    uint16_t& quantity
+    uint16_t& __restrict__ dst_addr,
+    Position&              src,
+    uint16_t& __restrict__ quantity
   )
 {
-  int8_t result = 0;
-  while(quantity && (dst_addr - start_address) < length)
+  int8_t err = 0;
+  while(quantity && dst_addr < (start_address + length))
   {
-    result = write_one(dst_addr, demarshal_u16(src.byte));
-    if(result != 0)
+    err = write_one(dst_addr, demarshal_u16(src.byte));
+    if(err != 0)
         break;
 
     ++dst_addr;
     src.byte += 2;
     --quantity;
   }
-  return result;
+  return err;
 }
 
 
 int8_t RegisterBlock::read_many(
-    Position& dest,
-    uint16_t& src_addr,
-    uint16_t& quantity
+    Position&              dest,
+    uint16_t& __restrict__ src_addr,
+    uint16_t& __restrict__ quantity
   ) const
 {
-  int8_t result = 0;
-  while(quantity && (src_addr - start_address) < length)
+  int8_t err = 0;
+  while(quantity && src_addr < (start_address + length))
   {
     uint16_t value;
-    result = read_one(src_addr, value);
-    if(result != 0)
+    err = read_one(src_addr, value);
+    if(err != 0)
         break;
 
     marshal_u16(dest.byte, value);
@@ -173,7 +171,7 @@ int8_t RegisterBlock::read_many(
     dest.byte += 2;
     --quantity;
   }
-  return result;
+  return err;
 }
 
 
@@ -430,7 +428,7 @@ Block* Mapping::find_addresses(
 int8_t Mapping::write_many(
     Block*   block,
     uint16_t dest_addr,
-    uint8_t*  src_byte,
+    uint8_t* src_byte,
     uint16_t quantity
   )
 {
@@ -456,7 +454,7 @@ int8_t Mapping::write_many(
 
 int8_t Mapping::read_many(
     Block*   block,
-    uint8_t*  dest_byte,
+    uint8_t* dest_byte,
     uint16_t src_addr,
     uint16_t quantity
   ) const

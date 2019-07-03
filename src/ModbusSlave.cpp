@@ -438,7 +438,7 @@ int8_t Slave::process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count )
 
     count = 6;
 
-    // Status word. (User needs to override Mapping::is_busy() for this.
+    // Status word. (User needs to override Mapping::is_busy() for this.)
     if (mapping.is_busy())
         buf[2] = buf[3] = 0xFF;
     else
