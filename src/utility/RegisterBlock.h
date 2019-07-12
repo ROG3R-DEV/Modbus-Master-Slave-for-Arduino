@@ -71,6 +71,24 @@ public:
   T* address2object()
     { return address2object<T>(start_address); }
 
+  /** If ptr fits into the data block, and starts on a register boundary,
+   *  then return its first register address. */
+  template<typename T>
+  uint16_t object2address(const T* tptr)
+    {
+      const uint8_t* ps = reinterpret_cast<uint16_t*>(tptr);
+      const uint8_t* pe = reinterpret_cast<uint16_t*>(tptr+1);
+      const uint8_t* s = data_words;
+      const uint8_t* e = data_words + length;
+      if(s<=ps && ps<e  &&  s<pe && pe<=e)
+      {
+        size_t d = ps - s;
+        if(0 == d % sizeof(*data_words))
+            return start_address + (d / sizeof(*data_words));
+      }
+      return UINT16_MAX;
+    }
+
 private:
   uint16_t* const  data_words;
 };
