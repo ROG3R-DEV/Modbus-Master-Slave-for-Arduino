@@ -259,7 +259,7 @@ int8_t Master::poll()
  */
 int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
 {
-    if (count < 5) // Exception is 3 bytes + 2 bytes CRC.
+    if (count < 3) // Exception is 3 bytes.
     {
         return ERR_MALFORMED_MESSAGE;
     }
@@ -274,7 +274,7 @@ int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
     }
 
     // Check for minimum message size.
-    if (count < 6) // FC 1 & 2: smallest response is 4 bytes + 2 bytes CRC
+    if (count < 4) // FC 1 & 2: smallest response is 4 bytes
     {
         return ERR_MALFORMED_MESSAGE;
     }

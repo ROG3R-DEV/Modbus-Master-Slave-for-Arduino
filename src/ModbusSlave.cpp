@@ -222,7 +222,7 @@ int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf )
 int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize )
 {
     // Validate the request message size.
-    if (count != 8)
+    if (count != 6)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = demarshal_u16( buf + ADD_HI );
@@ -256,7 +256,7 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
 int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize )
 {
     // Validate the request message size.
-    if (count != 8)
+    if (count != 6)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = demarshal_u16( buf + ADD_HI );
@@ -289,7 +289,7 @@ int8_t Slave::process_FC3( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
 int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count != 8)
+    if (count != 6)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr  = demarshal_u16( buf + ADD_HI );
@@ -299,8 +299,7 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if(value != 0x0000  &&  value != 0xFF00)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    // Response is just the first 6 bytes of the request.
-    count = 6;
+    // Response is an exact echo of the the request.
 
     // Set addr = value.
     return mapping.write_coils(addr, buf + NB_HI);
@@ -318,13 +317,12 @@ int8_t Slave::process_FC5( Mapping& mapping, uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count != 8)
+    if (count != 6)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr = demarshal_u16( buf + ADD_HI );
 
-    // Response is just the first 6 bytes of the request.
-    count = 6;
+    // Response is an exact echo of the the request.
 
     // Set addr = value.
     return mapping.write_holding_registers(addr, buf + NB_HI);
@@ -343,7 +341,7 @@ int8_t Slave::process_FC6( Mapping& mapping, uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC7( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count != 4)
+    if (count != 2)
         return EXC_ILLEGAL_DATA_VALUE;
 
     count = 3;
@@ -361,7 +359,7 @@ int8_t Slave::process_FC7( Mapping& mapping, uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count < 8)
+    if (count < 6)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t subfunction = demarshal_u16( buf + ADD_HI );
@@ -369,8 +367,7 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
     if (listenOnlyMode && subfunction != 0x01)
         return ERR_LISTEN_ONLY_MODE;
 
-    // Normal response is just to echo the request. Lop off the CRC...
-    count -= 2;
+    // Normal response is just to echo the request.
 
     switch(subfunction)
     {
@@ -435,7 +432,7 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count != 4)
+    if (count != 2)
         return EXC_ILLEGAL_DATA_VALUE;
 
     count = 6;
@@ -469,7 +466,7 @@ int8_t Slave::process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count < 10)
+    if (count < 8)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = demarshal_u16( buf + ADD_HI );
@@ -480,7 +477,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if(0 == quantity || quantity > 0x7B0 || n != (quantity+7)/8)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    if (count != n + 9)
+    if (count != n + 7)
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Response is just the first 6 bytes of the request.
@@ -502,7 +499,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
 {
     // Validate the request message size.
-    if (count < 11)
+    if (count < 9)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t addr     = demarshal_u16( buf + ADD_HI );
@@ -513,7 +510,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
     if(0 == quantity || quantity > 0x7B || n != quantity*2)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    if (count != n + 9)
+    if (count != n + 7)
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Response is just the first 6 bytes of the request.
@@ -534,7 +531,7 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
 int8_t Slave::process_FC23( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize )
 {
     // Validate the request message size.
-    if (count < 15)
+    if (count < 13)
         return EXC_ILLEGAL_DATA_VALUE;
 
     const uint16_t read_addr      = demarshal_u16( buf + 2 );
@@ -550,7 +547,7 @@ int8_t Slave::process_FC23( Mapping& mapping, uint8_t* buf, uint8_t& count, uint
     if(0 == write_quantity || write_quantity > 0x79 || n != write_quantity*2)
         return EXC_ILLEGAL_DATA_VALUE;
 
-    if (count != n + 13)
+    if (count != n + 11)
         return EXC_ILLEGAL_DATA_VALUE;
 
     // Set the response message size.

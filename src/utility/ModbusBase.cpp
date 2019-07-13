@@ -227,7 +227,7 @@ bool Base::rxFrameReady()
  *
  * @param buf     buffer into which the message should be read.
  * @param bufsize capacity of buffer, in bytes.
- * @return buffer message length if OK,
+ * @return buffer message length (minus 2-bytes of CRC) if OK,
  *                  ERR_RX_BUFF_OVERFLOW if message is larger than size
  * @ingroup buffer
  */
@@ -267,7 +267,7 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t bufsize )
     }
 
     ++u16Counter[CNT_BUS_MESSAGE];
-    return count;
+    return count - 2; // Subtract CRC
 }
 
 
