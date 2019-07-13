@@ -64,6 +64,13 @@ public:
   int8_t write_holding_registers(uint16_t dest_addr, uint8_t* src, uint16_t quantity =1);
   int8_t read_holding_registers(uint8_t* dest, uint16_t src_addr, uint16_t quantity =1) const;
 
+  /** For FC23: May be overridden to implement more sophisticated write/read
+   *  behaviour, such as "procedure calls". */
+  virtual int8_t write_read_multiple_registers(
+        uint8_t* write_src, uint16_t write_addr, uint16_t write_quantity,
+        uint8_t* read_dest, uint16_t read_addr,  uint16_t read_quantity
+      );
+
 private:
   Block*  coil_block_list_head;
   Block*  discrete_input_block_list_head;

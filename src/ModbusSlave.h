@@ -69,6 +69,7 @@ private:
     int8_t process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count );
     int8_t process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count );
+    int8_t process_FC23( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize );
 
 public:
     Slave(uint8_t u8id, Stream& port, uint8_t u8txenpin =0);

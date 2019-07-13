@@ -171,6 +171,24 @@ int8_t Mapping::read_holding_registers(
 }
 
 
+int8_t Mapping::write_read_multiple_registers(
+    uint8_t* write_src, uint16_t write_addr, uint16_t write_quantity,
+    uint8_t* read_dest, uint16_t read_addr,  uint16_t read_quantity
+  )
+{
+  // Must perform write operation BEFORE read operation.
+  // Check that read addresses are valid, before attempting the write.
+  if(!have_holding_register_addresses(read_addr, read_quantity))
+      return EXC_ILLEGAL_DATA_ADDRESS;
+
+  int8_t rv = write_many(holding_register_block_list_head, write_addr, write_src, write_quantity);
+  if(rv)
+      return rv; // error
+  else
+      return read_many(holding_register_block_list_head, read_dest, read_addr, read_quantity);
+}
+
+
 // PRIVATE
 
 void Mapping::add_block(Block** ptr, Block& new_block)

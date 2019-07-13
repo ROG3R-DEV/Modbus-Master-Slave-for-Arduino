@@ -129,7 +129,7 @@ int8_t Slave::poll( Mapping& mapping )
         i8error = process_FC1( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
         break;
     case MB_FC_READ_INPUT_REGISTERS:
-    case MB_FC_READ_HOLDING_REGISTERS :
+    case MB_FC_READ_HOLDING_REGISTERS:
         i8error = process_FC3( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
         break;
     case MB_FC_WRITE_SINGLE_COIL:
@@ -150,8 +150,11 @@ int8_t Slave::poll( Mapping& mapping )
     case MB_FC_WRITE_MULTIPLE_COILS:
         i8error = process_FC15( mapping, au8Buffer, u8BufferSize );
         break;
-    case MB_FC_WRITE_MULTIPLE_REGISTERS :
+    case MB_FC_WRITE_MULTIPLE_REGISTERS:
         i8error = process_FC16( mapping, au8Buffer, u8BufferSize );
+        break;
+    case MB_FC_READ_WRITE_MULTIPLE_REGISTERS:
+        i8error = process_FC23( mapping, au8Buffer, u8BufferSize, MAX_BUFFER );
         break;
     default:
         i8error = EXC_ILLEGAL_FUNCTION;
@@ -519,6 +522,51 @@ int8_t Slave::process_FC16( Mapping& mapping, uint8_t* buf, uint8_t& count )
 
     // Write the requested values from buf[7] onwards.
     return mapping.write_holding_registers(addr, buf + 7, quantity);
+}
+
+
+/**
+ * @brief
+ * This method processes function 23: MB_FC_READ_WRITE_MULTIPLE_REGISTERS
+ *
+ * @return 0: OK. Non-zero: error
+ * @ingroup register
+ */
+int8_t Slave::process_FC23( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8_t bufsize )
+{
+    // Validate the request message size.
+    if (count < 15)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    const uint16_t read_addr      = demarshal_u16( buf + 2 );
+    const uint16_t read_quantity  = demarshal_u16( buf + 4 );
+    const uint16_t write_addr     = demarshal_u16( buf + 6 );
+    const uint16_t write_quantity = demarshal_u16( buf + 8 );
+    const uint8_t  n              = buf[ 10 ];
+
+    // Validate the quantities.
+    if(0 == read_quantity || read_quantity > 0x7D)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    if(0 == write_quantity || write_quantity > 0x79 || n != write_quantity*2)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    if (count != n + 13)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    // Set the response message size.
+    buf[ 2 ] = read_quantity * 2;
+    count = buf[ 2 ] + 3;
+
+    if(count > bufsize-2)
+        return EXC_ILLEGAL_DATA_VALUE;
+
+    // Despite the name, we must perform the write operation *before* the
+    // read operation.
+    return mapping.write_read_multiple_registers(
+        buf + 3,  write_addr, write_quantity,
+        buf + 11, read_addr,  read_quantity
+      );
 }
 
 
