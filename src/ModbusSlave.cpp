@@ -165,12 +165,11 @@ int8_t Slave::poll( Mapping& mapping )
     {
         ++u16Counter[CNT_SLAVE_EXCEPTION];
         u8BufferSize = buildException( i8error, au8Buffer );
-        sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
-        // Ignore any error reported by sendTxBuffer().
+        sendTxBuffer( au8Buffer, u8BufferSize );
     }
     else if (i8error==0)
     {
-        i8error = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
+        sendTxBuffer( au8Buffer, u8BufferSize );
     }
     else
     {
@@ -381,7 +380,7 @@ int8_t Slave::process_FC8( uint8_t* buf, uint8_t& count )
     case 0x01: // Restart communications.
         // Must send reply immediately, before the reboot.
         if (!listenOnlyMode)
-            sendTxBuffer(buf, count, count+2);
+            sendTxBuffer(buf, count);
         // Use the watchdog timer to restart the board.
         wdt_disable();
         wdt_enable(WDTO_15MS);

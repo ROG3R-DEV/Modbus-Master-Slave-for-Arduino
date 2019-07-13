@@ -150,11 +150,7 @@ int8_t Master::query( modbus_t telegram )
         return setError(ERR_FUNC_CODE); // Unrecognised or unsupported function code.
     }
 
-    const int8_t i8bytes_sent = sendTxBuffer( au8Buffer, u8BufferSize, MAX_BUFFER );
-    if (i8bytes_sent < 0)
-    {
-        return setError(i8bytes_sent);
-    }
+    sendTxBuffer( au8Buffer, u8BufferSize );
     ++u16Counter[CNT_MASTER_QUERY];
     u32timeOut = millis();
     u8state = COM_WAITING;

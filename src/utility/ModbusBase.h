@@ -35,7 +35,7 @@ protected:
     int8_t setError( int8_t i8error );
     bool   rxFrameReady();
     int8_t getRxBuffer( uint8_t* buf, uint8_t count );
-    int8_t sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t size );
+    void   sendTxBuffer( uint8_t* buf, uint8_t count );
 
 public:
     void start();

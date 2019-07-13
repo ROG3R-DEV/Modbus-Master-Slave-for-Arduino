@@ -273,30 +273,17 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t bufsize )
 
 /**
  * @brief
- * This method transmits au8Buffer to Serial line.
+ * This method transmits buf, followed by its CRC to Serial line.
  * Only if u8txenpin != 0, there is a flow handling in order to keep
  * the RS485 transceiver in output state as long as the message is being sent.
- * This is done with UCSRxA register.
- * The CRC is appended to the buffer before starting to send it. The new
- * length of the buffer is returned, or ERR_TX_BUFF_OVERFLOW if the buffer is
- * too short.
  *
  * @param  buf     data buffer.
  * @param  count   message length.
- * @param  bufsize capacity of buffer in bytes.
- * @return         O: OK, ERR_TX_BUFF_OVERFLOW: buffer overflow
  * @ingroup buffer
  */
-int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
+void Base::sendTxBuffer( uint8_t* buf, uint8_t count )
 {
-    // append CRC to message
-    if (count+2 > bufsize)
-    {
-        return ERR_TX_BUFF_OVERFLOW;
-    }
     const uint16_t u16crc = calcCRC( buf, count );
-    buf[ count   ] = lowByte(  u16crc );
-    buf[ count+1 ] = highByte( u16crc );
 
     if (u8txenpin > 1)
     {
@@ -305,7 +292,11 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
     }
 
     // transfer buffer to serial line
-    port->write( buf, count+2 );
+    port->write( buf, count );
+
+    // Append the CRC
+    port->write( lowByte(  u16crc ) );
+    port->write( highByte( u16crc ) );
 
     if (u8txenpin > 1)
     {
@@ -320,8 +311,6 @@ int8_t Base::sendTxBuffer( uint8_t* buf, uint8_t count, uint8_t bufsize )
         digitalWrite( u8txenpin, LOW );
     }
     while(port->read() >= 0);
-
-    return 0;
 }
 
 
