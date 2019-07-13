@@ -281,7 +281,7 @@ int8_t Base::getRxBuffer( uint8_t* buf, uint8_t bufsize )
  * @param  count   message length.
  * @ingroup buffer
  */
-void Base::sendTxBuffer( uint8_t* buf, uint8_t count )
+void Base::sendTxBuffer( const uint8_t* buf, uint8_t count )
 {
     const uint16_t u16crc = calcCRC( buf, count );
 
