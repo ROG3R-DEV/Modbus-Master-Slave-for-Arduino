@@ -6,7 +6,8 @@
  * Test failures are reported to Serial, labelled "FAIL".
  */
 
-#include <ModbusMaster.h>
+//??#include <ModbusMaster.h>
+#include <ModbusRtu.h>
 #include <ModbusSlave.h>
 #include "src/loopback.h"
 
@@ -30,7 +31,7 @@ modbus_t telegram;
 int8_t master_poll_result;
 
 Loopback master_stream(MAX_BUFFER+1);
-Master master(master_stream,0);
+Modbus master(0,master_stream,0);
 
 
 //

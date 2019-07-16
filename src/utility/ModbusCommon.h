@@ -107,7 +107,8 @@ enum ERR_LIST
     ERR_RX_BUFF_OVERFLOW  = -8, //!< poll() methods.
     ERR_MALFORMED_MESSAGE = -9, //!< poll() methods.
     ERR_OUT_OF_MEMORY     = -10,
-    ERR_LISTEN_ONLY_MODE  = -11 // Slave is in listen only mode.
+    ERR_LISTEN_ONLY_MODE  = -11,// Slave is in listen only mode.
+    ERR_PDU               = -12
 };
 
 enum EXC_LIST
@@ -218,6 +219,14 @@ inline uint16_t demarshal_u16(const uint8_t* buf) __attribute__((always_inline))
 inline uint16_t demarshal_u16(const uint8_t* buf)
 {
     return (buf[0] << 8) | buf[1];
+}
+
+
+/** Calculate the number of bytes required to store a "quantity" of bits. */
+inline uint8_t bitset_size(const uint16_t quantity) __attribute__((always_inline));
+inline uint8_t bitset_size(const uint16_t quantity)
+{
+    return (quantity + 7) / 8;
 }
 
 

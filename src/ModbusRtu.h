@@ -62,6 +62,9 @@ private:
     Base* impl; //!< A pointer to a Master or Slave object.
     bool  is_master;
 
+    uint16_t* au16regs;
+    Message   mmsg;
+
 public:
     Modbus(uint8_t u8id, Stream& port, uint8_t u8txenpin =0);
 
@@ -75,10 +78,8 @@ public:
         { CHECK_MASTER(); static_cast<Master*>(impl)->setTimeOut(u16timeOut); }
     bool getTimeOutState() //!<get communication watch-dog timer state
         { CHECK_MASTER(false); return static_cast<Master*>(impl)->timeOutExpired(); }
-    int8_t query( modbus_t telegram ) //!<only for master
-        { CHECK_MASTER(-2); return static_cast<Master*>(impl)->query(telegram); }
-    int8_t poll() //!<cyclic poll for master
-        { CHECK_MASTER(-2); return static_cast<Master*>(impl)->poll(); }
+    int8_t query( modbus_t telegram ); //!<only for master
+    int8_t poll(); //!<cyclic poll for master
     int8_t poll( uint16_t *regs, uint8_t u8size ) //!<cyclic poll for slave
         { CHECK_SLAVE(-2); return static_cast<Slave*>(impl)->poll(regs,u8size); }
     uint16_t getInCnt() //!<number of incoming messages
@@ -97,8 +98,14 @@ public:
     void setTxendPinOverTime( uint32_t u32overTime )
         { impl->setTxendPinOverTime(u32overTime); }
 
-#undef CHECK_MASTER
-#undef CHECK_SLAVE
+    //
+    // New style counters etc. Backported for convenience.
+
+    void     clearCounters() { impl->clearCounters();}
+    uint16_t getCounter(uint8_t counterId_) const { return impl->getCounter(counterId_);}
+    int8_t   getLastError() const { return impl->getLastError();}
+    void     clearLastError() { impl->clearLastError();}
+    void     setT35(uint8_t v) { impl->setT35(v); }
 
     //
     // Deprecated functions
@@ -144,12 +151,20 @@ public:
  * @ingroup setup
  */
 Modbus::Modbus(uint8_t u8id, Stream& port, uint8_t u8txenpin):
-    is_master( u8id==0 )
+    is_master( u8id==0 ),
+    au16regs(NULL),
+    mmsg(NULL,0)
 {
   if (is_master)
+  {
       impl = new Master(port, u8txenpin);
+      mmsg.buf = new uint8_t[MAX_BUFFER];
+      mmsg.bufsize = MAX_BUFFER;
+  }
   else
+  {
       impl = new Slave(u8id, port, u8txenpin);
+  }
 }
 
 
@@ -167,7 +182,9 @@ Modbus::Modbus(uint8_t u8id, Stream& port, uint8_t u8txenpin):
  * @overload Modbus::Modbus(uint8_t u8id, T_Stream& port, uint8_t u8txenpin)
  */
 Modbus::Modbus(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin):
-    is_master( u8id==0 )
+    is_master( u8id==0 ),
+    au16regs(NULL),
+    mmsg(NULL,0)
 {
     Stream* port;
 
@@ -197,9 +214,15 @@ Modbus::Modbus(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin):
     }
 
   if (is_master)
+  {
       impl = new Master(*port, u8txenpin);
+      mmsg.buf = new uint8_t[MAX_BUFFER];
+      mmsg.bufsize = MAX_BUFFER;
+  }
   else
+  {
       impl = new Slave(u8id, *port, u8txenpin);
+  }
 }
 
 
@@ -272,6 +295,120 @@ uint16_t Modbus::getOutCnt()
         return impl->getCounter(CNT_SLAVE_MESSAGE) - impl->getCounter(CNT_SLAVE_NO_RESPONSE);
 }
 
+
+/**
+ * @brief
+ * Generate a query to an slave with a modbus_t telegram structure
+ * The Master must be in COM_IDLE mode. After it, its state would be COM_WAITING.
+ * This method has to be called only in loop() section.
+ *
+ * @see modbus_t
+ * @param modbus_t  modbus telegram structure (id, fct, ...)
+ * @return          success: 0, error: <0
+ * @ingroup loop
+ * @todo finish function 15
+ */
+int8_t Modbus::query( modbus_t telegram )
+{
+    CHECK_MASTER(-2);
+
+    au16regs = telegram.au16reg;
+
+    switch( telegram.u8fct )
+    {
+    case MB_FC_READ_COILS:
+        mmsg.fc_read_coils(telegram.u8id, telegram.u16RegAdd, telegram.u16CoilsNo);
+        break;
+    case MB_FC_READ_DISCRETE_INPUTS:
+        mmsg.fc_read_discrete_inputs(telegram.u8id, telegram.u16RegAdd, telegram.u16CoilsNo);
+        break;
+    case MB_FC_READ_HOLDING_REGISTERS:
+        mmsg.fc_read_holding_registers(telegram.u8id, telegram.u16RegAdd, telegram.u16CoilsNo);
+        break;
+    case MB_FC_READ_INPUT_REGISTERS:
+        mmsg.fc_read_input_registers(telegram.u8id, telegram.u16RegAdd, telegram.u16CoilsNo);
+        break;
+    case MB_FC_WRITE_SINGLE_COIL:
+        mmsg.fc_write_single_coil(telegram.u8id, telegram.u16RegAdd, au16regs[0]);
+        break;
+    case MB_FC_WRITE_SINGLE_REGISTER:
+        mmsg.fc_write_single_register(telegram.u8id, telegram.u16RegAdd, au16regs[0]);
+        break;
+    case MB_FC_WRITE_MULTIPLE_COILS:
+        mmsg.fc_write_multiple_coils(telegram.u8id, telegram.u16RegAdd, telegram.u16CoilsNo);
+        // ?? ASSUMING MACHINE IS LITTLE-ENDIAN ??
+        memcpy( mmsg.bit_data(), au16regs, bitset_size(mmsg.get_quantity()) );
+        break;
+    case MB_FC_WRITE_MULTIPLE_REGISTERS:
+        mmsg.fc_write_multiple_registers(telegram.u8id, telegram.u16RegAdd, telegram.u16CoilsNo);
+        for (uint16_t i=0; i< telegram.u16CoilsNo; i++)
+            mmsg.set_register( i, au16regs[ i ] );
+        break;
+
+    default:
+        return impl->setError(ERR_FUNC_CODE); // Unrecognised or unsupported function code.
+    }
+
+    return static_cast<Master*>(impl)->send_request(mmsg);
+}
+
+
+/**
+ * @brief
+ * This method checks if there is any incoming answer if pending.
+ * If there is no answer, it would change Master state to COM_IDLE.
+ * This method must be called only at loop section.
+ * Avoid any delay() function.
+ *
+ * Any incoming data would be redirected to au16regs pointer,
+ * as defined in its modbus_t query telegram.
+ *
+ * @params  nothing
+ * @return  error: <0, still waiting: 0, answer arrived: >0
+ * @ingroup loop
+ */
+int8_t Modbus::poll()
+{
+    CHECK_MASTER(-2);
+
+    int8_t i8error = static_cast<Master*>(impl)->poll(mmsg);
+    if (i8error == 1)
+    {
+        // process answer
+        switch( mmsg.get_fc() )
+        {
+        case MB_FC_READ_COILS:
+        case MB_FC_READ_DISCRETE_INPUTS:
+          {
+            // BUG: Need to check bounds of au16regs - response might not fit.
+            const uint8_t byte_count = bitset_size(mmsg.get_quantity());
+
+            // Make sure the high byte of the last word we write is zeroed.
+            if (byte_count % 2)
+                au16regs[ byte_count/2 ] = 0;
+
+            // ?? ASSUMING MACHINE IS LITTLE-ENDIAN ??
+            memcpy(au16regs, mmsg.bit_data(), byte_count);
+          }
+          break;
+        case MB_FC_READ_INPUT_REGISTERS:
+        case MB_FC_READ_HOLDING_REGISTERS:
+          {
+            // BUG: Need to check bounds of au16regs - response might not fit.
+            for (uint8_t i=0; i<mmsg.get_quantity(); i++)
+                mmsg.get_register(i, au16regs[ i ]);
+          }
+          break;
+        default:
+            break;
+        }
+    }
+    return i8error;
+}
+
+
+#undef CHECK_MASTER
+#undef CHECK_SLAVE
 
 } // end namespace modbus
 

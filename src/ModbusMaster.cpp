@@ -29,7 +29,6 @@ namespace modbus {
 Master::Master(Stream& port_, uint8_t u8txenpin_):
     Base(port_, u8txenpin_),
     u8state(COM_IDLE),
-    au16regs(NULL),
     u16timeOut(1000),
     u32timeOut(0)
 {}
@@ -78,6 +77,12 @@ uint8_t Master::getState() const
 }
 
 
+void Master::cancel_request()
+{
+    u8state = COM_IDLE;
+}
+
+
 /**
  * @brief
  * Generate a query to an slave with a modbus_t telegram structure
@@ -90,70 +95,24 @@ uint8_t Master::getState() const
  * @ingroup loop
  * @todo finish function 15
  */
-int8_t Master::query( modbus_t telegram )
+int8_t Master::send_request(Message& msg)
 {
-    if (u8state != COM_IDLE)
+    if(u8state != COM_IDLE)
         return setError(ERR_WAITING);
 
-    if ((telegram.u8id==0) || (telegram.u8id>247))
+    if(msg.get_slave() > 247)
         return setError(ERR_BAD_SLAVE_ID);
 
-    au16regs = telegram.au16reg;
-
-    // The buffer into which we will write the query.
-    uint8_t au8Buffer[MAX_BUFFER];
-    uint8_t u8BufferSize;
-
-    // telegram header
-    au8Buffer[ ID ]   = telegram.u8id;
-    au8Buffer[ FUNC ] = telegram.u8fct;
-    marshal_u16( au8Buffer + ADD_HI, telegram.u16RegAdd );
-
-    switch( telegram.u8fct )
-    {
-    case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUTS:
-    case MB_FC_READ_HOLDING_REGISTERS:
-    case MB_FC_READ_INPUT_REGISTERS:
-        marshal_u16( au8Buffer + NB_HI, telegram.u16CoilsNo );
-        u8BufferSize = 6;
-        break;
-    case MB_FC_WRITE_SINGLE_COIL:
-        au8Buffer[ NB_HI ] = ((au16regs[0] > 0) ? 0xff : 0);
-        au8Buffer[ NB_LO ] = 0;
-        u8BufferSize = 6;
-        break;
-    case MB_FC_WRITE_SINGLE_REGISTER:
-        marshal_u16( au8Buffer + NB_HI, au16regs[0] );
-        u8BufferSize = 6;
-        break;
-    case MB_FC_WRITE_MULTIPLE_COILS:
-        marshal_u16( au8Buffer + NB_HI, telegram.u16CoilsNo );
-        au8Buffer[ BYTE_CNT ] = (telegram.u16CoilsNo + 7)/8;
-        u8BufferSize = 7 + au8Buffer[ BYTE_CNT ];
-        // ?? ASSUMING MACHINE IS LITTLE-ENDIAN ??
-        memcpy( au8Buffer + 7, au16regs, au8Buffer[ BYTE_CNT ] );
-        break;
-    case MB_FC_WRITE_MULTIPLE_REGISTERS:
-        marshal_u16( au8Buffer + NB_HI, telegram.u16CoilsNo );
-        au8Buffer[ BYTE_CNT ] = static_cast<uint8_t>( telegram.u16CoilsNo * 2 );
-        u8BufferSize = 7;
-
-        for (uint16_t i=0; i< telegram.u16CoilsNo; i++)
-        {
-            marshal_u16( au8Buffer + u8BufferSize, au16regs[ i ] );
-            u8BufferSize += 2;
-        }
-        break;
-
-    default:
-        return setError(ERR_FUNC_CODE); // Unrecognised or unsupported function code.
-    }
-
-    sendTxBuffer( au8Buffer, u8BufferSize );
+    sendTxBuffer(msg.buf, msg.length);
     ++u16Counter[CNT_MASTER_QUERY];
     u32timeOut = millis();
-    u8state = COM_WAITING;
+
+    // Do not wait for broadcast requests.
+    if(msg.get_slave())
+    {
+        msg.save_request();
+        u8state = COM_WAITING;
+    }
     return 0;
 }
 
@@ -172,7 +131,7 @@ int8_t Master::query( modbus_t telegram )
  * @return  error: <0, still waiting: 0, answer arrived: >0
  * @ingroup loop
  */
-int8_t Master::poll()
+int8_t Master::poll(Message& msg)
 {
     if (u8state != COM_WAITING)
         return 0; // Not expecting any incoming messages.
@@ -188,143 +147,36 @@ int8_t Master::poll()
         return 0;
 
     // transfer Serial buffer frame to a local buffer.
-    uint8_t au8Buffer[MAX_BUFFER];
-    const int8_t i8bytes_read = getRxBuffer( au8Buffer, MAX_BUFFER );
+    const int8_t i8bytes_read = getRxBuffer( msg.buf, msg.bufsize );
     if (i8bytes_read < 0)
     {
-        u8state = COM_IDLE;
         return setError(i8bytes_read); // Pass error on from getRxBuffer().
     }
-    uint8_t u8BufferSize = i8bytes_read;
+    msg.length = i8bytes_read;
 
     ++u16Counter[CNT_MASTER_RESPONSE];
 
     // validate message: length, exception
-    int8_t i8error = validateAnswer( au8Buffer, u8BufferSize );
-
+    int8_t i8error = msg.verify_response();
     if (i8error == 0)
     {
-        // process answer
-
-        // BUG: Need to check that the response matches the Slave ID and
-        //      function code that we are actually waiting for.
-        //      If the bus has multiple slaves, the current implementation
-        //      could cause chaos.
-
-        switch( au8Buffer[ FUNC ] )
-        {
-        case MB_FC_READ_COILS:
-        case MB_FC_READ_DISCRETE_INPUTS:
-            // call get_FC1 to transfer the incoming message to au16regs buffer
-            // BUG: Need to check bounds of au16regs - response might not fit.
-            get_FC1( au8Buffer, u8BufferSize );
-            break;
-        case MB_FC_READ_INPUT_REGISTERS:
-        case MB_FC_READ_HOLDING_REGISTERS :
-            // call get_FC3 to transfer the incoming message to au16regs buffer
-            // BUG: Need to check bounds of au16regs - response might not fit.
-            get_FC3( au8Buffer, u8BufferSize );
-            break;
-        case MB_FC_WRITE_SINGLE_COIL:
-        case MB_FC_WRITE_SINGLE_REGISTER :
-        case MB_FC_WRITE_MULTIPLE_COILS:
-        case MB_FC_WRITE_MULTIPLE_REGISTERS :
-            // nothing to do
-            break;
-        default:
-            i8error = ERR_FUNC_CODE;
-            break;
-        }
-    }
-
-    u8state = COM_IDLE;
-    if (i8error == 0)
+        u8state = COM_IDLE;
         return 1; // Response received and processed OK.
+    }
     else if (i8error > 0)
+    {
+        u8state = COM_IDLE;
         ++u16Counter[CNT_MASTER_EXCEPTION];
+    }
     else
+    {
         ++u16Counter[CNT_MASTER_IGNORED];
+    }
     return setError(i8error);
 }
 
 
 /* ____PRIVATE FUNCTIONS_____MASTER__________________________________________ */
-
-/**
- * @brief
- * This method validates master incoming messages
- *
- * @return 0 if OK, EXCEPTION if anything fails
- * @ingroup buffer
- */
-int8_t Master::validateAnswer( const uint8_t* buf, uint8_t count ) const
-{
-    if (count < 3) // Exception is 3 bytes.
-    {
-        return ERR_MALFORMED_MESSAGE;
-    }
-
-    // check exception
-    if ((buf[ FUNC ] & 0x80) != 0)
-    {
-        if (buf[ 2 ] <= INT8_MAX)
-            return buf[ 2 ];
-        else
-            return ERR_EXCEPTION;
-    }
-
-    // Check for minimum message size.
-    if (count < 4) // FC 1 & 2: smallest response is 4 bytes
-    {
-        return ERR_MALFORMED_MESSAGE;
-    }
-
-    return 0; // OK, no exception code thrown
-}
-
-
-/**
- * This method processes functions 1 & 2 (for master)
- * This method puts the slave answer into master data buffer
- *
- * @ingroup register
- * TODO: finish its implementation
- */
-void Master::get_FC1( const uint8_t* buf, uint8_t /*count*/ )
-{
-    // Tell the compiler that buf & au16regs point to different memory.
-    const uint8_t* const __restrict__ buf_data  = buf + 3;
-    uint16_t*      const __restrict__ user_data = au16regs;
-
-    const uint8_t byte_count = buf[ 2 ];
-
-    // Make sure the high byte of the last word we write is zeroed.
-    if (byte_count % 2)
-        user_data[ byte_count/2 ] = 0;
-
-    // ?? ASSUMING MACHINE IS LITTLE-ENDIAN ??
-    memcpy(user_data, buf_data, byte_count);
-}
-
-
-/**
- * This method processes functions 3 & 4 (for master)
- * This method puts the slave answer into master data buffer
- *
- * @ingroup register
- */
-void Master::get_FC3( const uint8_t* __restrict__ buf, uint8_t /*count*/ )
-{
-    // Tell the compiler that buf & au16regs point to different memory.
-    const uint8_t* const __restrict__  buf_data  = buf + 3;
-    uint16_t*      const __restrict__  user_data = au16regs;
-
-    const uint8_t num_registers = buf[ 2 ] / 2;
-    for (uint8_t i=0; i<num_registers; i++)
-    {
-        user_data[ i ] = demarshal_u16( buf_data + (i*2) );
-    }
-}
 
 
 } // end namespace modbus

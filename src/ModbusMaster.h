@@ -37,6 +37,7 @@
 
 #include "utility/ModbusCommon.h"
 #include "utility/ModbusBase.h"
+#include "utility/Message.h"
 
 namespace modbus {
 
@@ -55,14 +56,8 @@ private:
     Master& operator= (const Master&); //!< Not assignable.
 
     uint8_t   u8state;
-    uint16_t* au16regs;
     uint16_t  u16timeOut;
     uint32_t  u32timeOut; //!< Timestamp of last query (millis).
-
-private:
-    int8_t validateAnswer( const uint8_t* buf, uint8_t count ) const;
-    void get_FC1( const uint8_t* buf, uint8_t count );
-    void get_FC3( const uint8_t* buf, uint8_t count );
 
 public:
     Master(Stream& port, uint8_t u8txenpin =0);
@@ -70,9 +65,10 @@ public:
     void setTimeOut( uint16_t u16timeOut); //!<write communication watch-dog timer
     bool timeOutExpired() const; //!<get communication watch-dog timer state
     uint8_t getState() const;
+    void    cancel_request();
 
-    int8_t query( modbus_t telegram ); //!<only for master
-    int8_t poll(); //!<cyclic poll for master
+    int8_t send_request( Message& msg );
+    int8_t poll( Message& msg );
 };
 
 
