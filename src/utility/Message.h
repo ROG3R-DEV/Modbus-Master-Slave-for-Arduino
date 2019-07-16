@@ -252,12 +252,35 @@ struct Message
       return 0;
     }
 
+  /** Unchecked version! Only call this is you are certain that it will succeed.
+   *  If a response has passed verification, the FC is correct,
+   *  and bitnum < quantity, then this call is guaranteed to succeed. */
+  bool get_bit(uint16_t bitnum)
+    {
+      uint8_t* bdata = bit_data();
+      if(bdata)
+          return bitRead(bdata[bitnum/8], bitnum%8);
+      else
+          return false;
+    }
+
   int8_t set_bit(uint16_t bitnum, bool value)
     {
       uint8_t* bdata = bit_data();
       if(!bdata)
           return ERR_FUNC_CODE;
       bitWrite(bdata[bitnum/8], bitnum%8, value);
+      return 0;
+    }
+
+  /** <values> array parameter MUST contain at least <quantity> bits. */
+  int8_t set_bits(uint8_t* values)
+    {
+      uint8_t* bdata = bit_data();
+      if(!bdata)
+          return ERR_FUNC_CODE;
+      const uint16_t quantity = get_quantity();
+      memcpy(bdata, values, bitset_size(quantity));
       return 0;
     }
 
@@ -270,12 +293,36 @@ struct Message
       return 0;
     }
 
+  /** Unchecked version! Only call this is you are certain that it will succeed.
+   *  If a response has passed verification, the FC is correct,
+   *  and regnum < quantity, then this call is guaranteed to succeed. */
+  uint16_t get_register(uint16_t regnum)
+    {
+      uint8_t* rdata = register_data();
+      if(rdata)
+          return demarshal_u16(rdata + 2*regnum);
+      else
+          return UINT16_MAX;
+    }
+
   int8_t set_register(uint16_t regnum, uint16_t value)
     {
       uint8_t* rdata = register_data();
       if(!rdata)
           return ERR_FUNC_CODE;
       marshal_u16(rdata + 2*regnum, value);
+      return 0;
+    }
+
+  /** <values> array parameter MUST contain at least <quantity> uint16_t values. */
+  int8_t set_registers(uint16_t* values)
+    {
+      uint8_t* rdata = register_data();
+      if(!rdata)
+          return ERR_FUNC_CODE;
+      const uint16_t quantity = get_quantity();
+      for(size_t i=0; i<quantity; ++i)
+          marshal_u16(rdata + 2*i, values[i]);
       return 0;
     }
 

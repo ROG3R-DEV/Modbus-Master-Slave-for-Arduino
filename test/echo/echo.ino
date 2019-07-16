@@ -6,8 +6,7 @@
  * Test failures are reported to Serial, labelled "FAIL".
  */
 
-//??#include <ModbusMaster.h>
-#include <ModbusRtu.h>
+#include <ModbusMaster.h>
 #include <ModbusSlave.h>
 #include "src/loopback.h"
 
@@ -27,11 +26,12 @@ uint16_t pass_count =0;
 
 const uint16_t master_data_count = 16;
 uint16_t master_data[master_data_count+1];
-modbus_t telegram;
+uint8_t msgbuf[MAX_BUFFER];
+Message msg(msgbuf, MAX_BUFFER);
 int8_t master_poll_result;
 
 Loopback master_stream(MAX_BUFFER+1);
-Modbus master(0,master_stream,0);
+Master master(master_stream,0);
 
 
 //
@@ -107,11 +107,6 @@ bool addr2bool(uint16_t addr)
 
 void init_master()
 {
-  telegram.u8id = slave_id;
-  telegram.u8fct = 0;
-  telegram.u16RegAdd = 0;
-  telegram.u16CoilsNo = 0;
-  telegram.au16reg = master_data; // pointer to a memory array in the Arduino
 }
 
 void init_slave()
@@ -167,7 +162,7 @@ void poll()
     Serial.println("");
   }
 
-  master_poll_result = master.poll();
+  master_poll_result = master.poll(msg);
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
       master_stream.print_status(Serial, "master");
       slave_stream.print_status(Serial, "slave");
@@ -204,24 +199,19 @@ void poll()
 
 uint16_t read_holding_register(uint16_t addr)
 {
-  telegram.u8fct = MB_FC_READ_HOLDING_REGISTERS;
-  telegram.u16RegAdd = addr;
-  telegram.u16CoilsNo = 1;
-  master.query( telegram );
+  msg.fc_read_holding_registers(1, addr, 1);
+  master.send_request(msg);
   while(master.getState()==COM_WAITING)
   {
     poll();
   }
-  return telegram.au16reg[0];
+  return msg.get_register(0);
 }
 
 void write_holding_register(uint16_t addr, uint16_t val)
 {
-  telegram.u8fct = MB_FC_WRITE_SINGLE_REGISTER;
-  telegram.u16RegAdd = addr;
-  telegram.u16CoilsNo = 0;
-  telegram.au16reg[0] = val;
-  master.query( telegram );
+  msg.fc_write_single_register(1, addr, val);
+  master.send_request(msg);
   while(master.getState()==COM_WAITING)
   {
     poll();
@@ -328,24 +318,19 @@ void test_holding_registers()
 
 bool read_coil(uint16_t addr)
 {
-  telegram.u8fct = MB_FC_READ_COILS;
-  telegram.u16RegAdd = addr;
-  telegram.u16CoilsNo = 1;
-  master.query( telegram );
+  msg.fc_read_coils(1, addr, 1);
+  master.send_request(msg);
   while(master.getState()==COM_WAITING)
   {
     poll();
   }
-  return telegram.au16reg[0];
+  return msg.get_bit(0);
 }
 
 void write_coil(uint16_t addr, bool val)
 {
-  telegram.u8fct = MB_FC_WRITE_SINGLE_COIL;
-  telegram.u16RegAdd = addr;
-  telegram.u16CoilsNo = 0;
-  telegram.au16reg[0] = (val? 1: 0);
-  master.query( telegram );
+  msg.fc_write_single_coil(1, addr, val);
+  master.send_request(msg);
   while(master.getState()==COM_WAITING)
   {
     poll();
@@ -435,13 +420,12 @@ void test_multiple_registers()
     for(uint16_t reg_addr=0; (reg_addr+num)<slave_data_count; ++reg_addr)
     {
 
-      telegram.u8fct = MB_FC_WRITE_MULTIPLE_REGISTERS;
-      telegram.u16RegAdd = reg_addr;
-      telegram.u16CoilsNo = num;
-      fill_array_with_test_data(telegram.au16reg, num);
-      const uint16_t crc0 = modbus::Base::calcCRC(telegram.au16reg, num*2);
+      fill_array_with_test_data(master_data, num);
+      msg.fc_write_multiple_registers(1, reg_addr, num);
+      msg.set_registers(master_data);
+      const uint16_t crc0 = modbus::Base::calcCRC(master_data, num*2);
 
-      master.query( telegram );
+      master.send_request(msg);
       while(master.getState()==COM_WAITING)
       {
         poll();
@@ -490,21 +474,20 @@ void test_multiple_coils()
   {
     for(uint16_t reg_addr=0; (reg_addr+num) < 16*slave_data_count; reg_addr+=3)
     {
-      telegram.u8fct = MB_FC_WRITE_MULTIPLE_COILS;
-      telegram.u16RegAdd = reg_addr;
-      telegram.u16CoilsNo = num;
-      uint8_t num_bytes = (num+7)/8;
-      fill_array_with_test_data(telegram.au16reg, num_bytes);
+      const uint8_t num_bytes = bitset_size(num);
+      fill_array_with_test_data(master_data, num_bytes);
+      msg.fc_write_multiple_coils(1, reg_addr, num);
+      msg.set_bits(reinterpret_cast<uint8_t*>(master_data));
 
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
-      Serial.write((uint8_t*)(telegram.au16reg), num_bytes);
+      Serial.write((uint8_t*)(master_data), num_bytes);
       Serial.println("");
 #endif
 
       // Clear the slave data.
       memset(slave_data, 0, slave_data_count+1);
 
-      master.query( telegram );
+      master.send_request(msg);
       while(master.getState()==COM_WAITING)
       {
         poll();
@@ -521,7 +504,7 @@ void test_multiple_coils()
 
       // Check that the slave data has been set correctly.
       ++test_id;
-      test_equal_bits("test_multiple_coils, write", test_id, num, (uint8_t*)(telegram.au16reg), (uint8_t*)slave_data, reg_addr);
+      test_equal_bits("test_multiple_coils, write", test_id, num, (uint8_t*)(master_data), (uint8_t*)slave_data, reg_addr);
     }
   }
   test_equal("test_multiple_coils, master errCnt",0,master.getCounter(CNT_MASTER_EXCEPTION),errcnt0);
