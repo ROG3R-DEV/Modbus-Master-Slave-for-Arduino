@@ -167,15 +167,16 @@ struct Message
 
   uint8_t* register_data()
     {
+      uint8_t offset = 0;
       switch(type)
       {
       case MSG_REQUEST:
           switch(get_fc())
           {
             case MB_FC_WRITE_SINGLE_REGISTER:
-            case MB_FC_DIAGNOSTICS:                   return buf + 4;
-            case MB_FC_WRITE_MULTIPLE_REGISTERS:      return buf + 7;
-            case MB_FC_READ_WRITE_MULTIPLE_REGISTERS: return buf + 11; // write registers
+            case MB_FC_DIAGNOSTICS:                   offset = 4; break;
+            case MB_FC_WRITE_MULTIPLE_REGISTERS:      offset = 7; break;
+            case MB_FC_READ_WRITE_MULTIPLE_REGISTERS: offset = 11; break; // write registers
             default: break;
           }
           break;
@@ -184,12 +185,12 @@ struct Message
           switch(get_fc())
           {
             case MB_FC_READ_HOLDING_REGISTERS:
-            case MB_FC_READ_INPUT_REGISTERS:
-            case MB_FC_READ_WRITE_MULTIPLE_REGISTERS: return buf + 3; // read registers
+            case MB_FC_READ_INPUT_REGISTERS:          offset = 3; break;
             case MB_FC_WRITE_SINGLE_REGISTER:
-            case MB_FC_DIAGNOSTICS:                   return buf + 4;
-            case MB_FC_GET_COMM_EVENT_COUNTER:        return buf + 2;
-            case MB_FC_READ_FIFO_QUEUE:               return buf + 6;
+            case MB_FC_DIAGNOSTICS:                   offset = 4; break;
+            case MB_FC_GET_COMM_EVENT_COUNTER:        offset = 2; break;
+            case MB_FC_READ_WRITE_MULTIPLE_REGISTERS: offset = 3; break; // read registers
+            case MB_FC_READ_FIFO_QUEUE:               offset = 6; break;
             default: break;
           }
           break;
@@ -197,7 +198,10 @@ struct Message
       default:
           break;
       }
-      return NULL;
+      if(offset)
+          return buf + offset;
+      else
+          return NULL;
     }
   
 
@@ -329,7 +333,7 @@ struct Message
   int8_t verify_response()
     {
       type = MSG_RESPONSE;
-      if(length < 2) // Exception is 2 bytes.
+      if(length < 3) // Exception is 2 bytes.
           return ERR_MALFORMED_MESSAGE;
 
       // Check slave ID.
