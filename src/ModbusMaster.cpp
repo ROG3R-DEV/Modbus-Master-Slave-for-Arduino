@@ -93,7 +93,6 @@ void Master::cancel_request()
  * @param modbus_t  modbus telegram structure (id, fct, ...)
  * @return          success: 0, error: <0
  * @ingroup loop
- * @todo finish function 15
  */
 int8_t Master::send_request(Message& msg)
 {
