@@ -16,23 +16,21 @@
 
 #include <ModbusMaster.h>
 
-uint16_t au16data[16]; //!< data array for modbus network sharing
 uint8_t u8state; //!< machine state
 uint8_t u8query; //!< pointer to message query
 
 /**
- *  Modbus object declaration
- *  u8id : node id = 0 for master, = 1..247 for slave
+ *  Master object declaration
  *  port : serial port
  *  u8txenpin : 0 for RS-232 and USB-FTDI 
  *               or any pin number > 1 for RS-485
  */
-Master master(Serial,0); // this is master and RS-232 or USB-FTDI
+Master master(Serial,0); // this is RS-232 or USB-FTDI
 
 /**
  * This is a struct which contains a query to a slave device
  */
-modbus_t telegram[2];
+Message telegram;
 
 unsigned long u32time;
 
@@ -95,20 +93,6 @@ void report_error(int8_t err) {
 
 
 void setup() {
-  // telegram 0: read registers
-  telegram[0].u8id = 1; // slave address
-  telegram[0].u8fct = MB_FC_READ_INPUT_REGISTERS; // function code 4
-  telegram[0].u16RegAdd = 30000; // start address in slave
-  telegram[0].u16CoilsNo = 2; // number of elements (coils or registers) to read
-  telegram[0].au16reg = au16data; // pointer to a memory array in the Arduino
-
-  // telegram 1: write a single register
-  telegram[1].u8id = 1; // slave address
-  telegram[1].u8fct = MB_FC_WRITE_REGISTER; // function code 6
-  telegram[1].u16RegAdd = 40000; // start address in slave
-  telegram[1].u16CoilsNo = 2; // number of elements (coils or registers) to write
-  telegram[1].au16reg = au16data+4; // pointer to a memory array in the Arduino
-
   // Set serial port to baud-rate at 19200,
   // 8 data bits, Even parity, 1 stop bit, as required by MODBUS standard.
   Serial.begin( 19200, SERIAL_8E1 );
@@ -125,53 +109,61 @@ void setup() {
 void loop() {
   int8_t retval;
   switch( u8state ) {
-  case 0:
-    // Wait for 1000ms.
-    if (millis() - u32time > 1000) {
-        blink(1,10);
-        u8state++;
-    }
-    break;
+    case 0:
+        // Wait for 1000ms.
+        if (millis() - u32time > 1000) {
+            blink(1,10);
+            u8state++;
+        }
+        break;
 
-  case 1:
-    if (u8query == 1) {
-        au16data[4] = analogRead( A0 );
-        au16data[5] = analogRead( A1 );
-    }
+    case 1:
+        switch(u8query) {
+          case 0:
+              // Read "input registers" 30000-30001 from slave ID=1.
+              telegram.fc_read_input_registers(1, 30000, 2);
+              break;
 
-    retval = master.query( telegram[u8query] ); // send query (only once)
-    if (retval < 0) {
-        report_error( retval );
-        // Reset
-        u8state = 0;
-        u32time = millis();
-    } else {
-        u8state++;
-    }
-    break;
-
-  case 2:
-    retval = master.poll(); // check incoming messages
-    if (retval < 0) {
-        report_error( retval );
-        // Reset
-        u8state = 0;
-        u32time = millis();
-    }
-    else if (master.getState() == COM_IDLE) {
-        if (u8query == 0) {
-            // Do something with the return data...
-            // For example, blink the builtin LED really fast...
-            uint16_t return_data = telegram[u8query].au16reg[0];
-            blink_bits( return_data );
+          case 1:
+              // Write the value of pin A0 to "holding register" 40000,
+              // on slave ID=1
+              telegram.fc_write_single_register(1, 40000, analogRead( A0 ));
+              break;
         }
 
-        // Move on to the next query
-        u8query = (u8query + 1) % 2;
-        u8state = 0;
-        u32time = millis();
-    }
-    break;
+        retval = master.send_request( telegram ); // send request (only once)
+        if (retval < 0) {
+            report_error( retval );
+            // Reset
+            u8state = 0;
+            u32time = millis();
+        } else {
+            u8state++;
+        }
+        break;
+
+    case 2:
+        retval = master.poll( telegram ); // check incoming messages
+        if (retval < 0) {
+            report_error( retval );
+            // Reset
+            u8state = 0;
+            u32time = millis();
+        }
+        else if (master.getState() == COM_IDLE) {
+            if (u8query == 0) {
+                // Do something with the return data...
+                // For example, blink the builtin LED really fast...
+                uint16_t return_data = telegram.get_register( 0 );
+                blink_bits( return_data );
+            }
+
+            // Move on to the next query
+            u8query = (u8query + 1) % 2;
+            u8state = 0;
+            u32time = millis();
+        }
+        break;
   }
 
 }

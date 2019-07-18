@@ -44,9 +44,6 @@
 #include <ModbusMaster.h>
 #include <SoftwareSerial.h>
 
-// data array for modbus network sharing
-uint16_t au16data[16];
-
 // Create a SoftwareSerial object so that we can use software serial.
 // Search "software serial" on Arduino.cc to find out more details.
 #define RX_PIN 3
@@ -65,7 +62,7 @@ Master master(mySerial); // this is master and RS-232 or USB-FTDI via software s
 /**
  * This is a struct which contains a query to a slave device
  */
-modbus_t telegram;
+Message telegram;
 
 uint8_t u8state;
 unsigned long u32time;
@@ -114,14 +111,11 @@ void loop() {
     }
     break;
 
-  case 1: 
-    telegram.u8id = 1; // slave address
-    telegram.u8fct = MB_FC_READ_REGISTERS; // function code 3
-    telegram.u16RegAdd = 40000; // start address in slave
-    telegram.u16CoilsNo = 4; // number of elements (coils or registers) to read
-    telegram.au16reg = au16data; // pointer to a memory array in the Arduino
+  case 1:
+    // Create request to slave id=1, for register start addr=40000, quantity=4
+    telegram.fc_read_holding_registers(1, 40000, 4);
 
-    retval = master.query( telegram ); // send query (only once)
+    retval = master.send_request( telegram ); // send request (only once)
     if (retval < 0) {
         report_error("query", retval);
         // Reset
@@ -133,7 +127,7 @@ void loop() {
     break;
 
   case 2:
-    retval = master.poll();
+    retval = master.poll(telegram);
     if (retval < 0) {
         report_error("poll", retval);
         // Reset
@@ -143,9 +137,9 @@ void loop() {
     else if (master.getState() == COM_IDLE) {
          // Do something with the data...
         Serial.print(F("Master got:"));
-        for (size_t i=0; i<telegram.u16CoilsNo; ++i) {
+        for (size_t i=0; i<telegram.get_quantity(); ++i) {
             Serial.print(" ");
-            Serial.print(au16data[i]);
+            Serial.print(telegram.get_register(i));
         }
         Serial.println("");
         // Reset
