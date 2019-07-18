@@ -10,6 +10,26 @@ namespace {
 }
 
 
+Message::Message(uint8_t bufsize_, uint8_t* buf_):
+  buf(buf_), bufsize(bufsize_), own_buf(false)
+{
+  if(!buf)
+  {
+    if(bufsize == 0)
+        bufsize = INITIAL_BUFSIZE;
+
+    buf = (uint8_t*)malloc(bufsize);
+    own_buf = true;
+  }
+}
+
+Message::~Message()
+{
+  if(own_buf)
+      free(buf);
+}
+
+
 void Message::save_request()
 {
   if(buf)
@@ -80,7 +100,7 @@ int8_t Message::fc_get_comm_event_log(uint8_t slave_id)
 int8_t Message::Message::fc_write_multiple_coils(uint8_t slave_id, uint16_t addr, uint16_t quantity)
 {
   const uint8_t n = bitset_size(quantity);
-  if(!buf || bufsize < (7 + n))
+  if(!_bufsize_ok(7 + n))
       return ERR_PDU;
   _hdr(slave_id, MB_FC_WRITE_MULTIPLE_COILS, addr, quantity);
   buf[6] = n;
@@ -93,7 +113,7 @@ int8_t Message::Message::fc_write_multiple_coils(uint8_t slave_id, uint16_t addr
 int8_t Message::fc_write_multiple_registers(uint8_t slave_id, uint16_t addr, uint16_t quantity)
 {
   const uint8_t n = quantity * 2;
-  if(!buf || bufsize < (7 + n))
+  if(!_bufsize_ok(7 + n))
       return ERR_PDU;
   _hdr(slave_id, MB_FC_WRITE_MULTIPLE_REGISTERS, addr, quantity);
   buf[6] = n;
@@ -111,7 +131,7 @@ int8_t Message::fc_write_read_multiple_registers(
 {
   const uint8_t wbytes = write_quantity * 2;
   const uint8_t rbytes = read_quantity * 2;
-  if(!buf || bufsize < (11 + wbytes) || bufsize < (3 + rbytes + CRC))
+  if(!_bufsize_ok(max(11 + wbytes, 3 + rbytes + CRC)))
       return ERR_PDU;
   type = MSG_REQUEST;
   set_slave(slave_id);
@@ -272,14 +292,25 @@ int8_t Message::set_bit(uint16_t bitnum, bool value)
 }
 
 
-/** <values> array parameter MUST contain at least <quantity> bits. */
-int8_t Message::set_bits(uint8_t* values)
+int8_t Message::get_bits(uint8_t* bitset, uint16_t bitset_length)
 {
   uint8_t* bdata = bit_data();
   if(!bdata)
       return ERR_FUNC_CODE;
-  const uint16_t quantity = get_quantity();
-  memcpy(bdata, values, bitset_size(quantity));
+  const uint16_t q = min(get_quantity(), bitset_length);
+  memcpy(bitset, bdata, bitset_size(q));
+  return 0;
+}
+
+
+/** <values> array parameter MUST contain at least <quantity> bits. */
+int8_t Message::set_bits(uint8_t* bitset, uint16_t bitset_length)
+{
+  uint8_t* bdata = bit_data();
+  if(!bdata)
+      return ERR_FUNC_CODE;
+  const uint16_t q = min(get_quantity(), bitset_length);
+  memcpy(bdata, bitset, bitset_size(q));
   return 0;
 }
 
@@ -316,13 +347,26 @@ int8_t Message::set_register(uint16_t regnum, uint16_t value)
 
 
 /** <values> array parameter MUST contain at least <quantity> uint16_t values. */
-int8_t Message::set_registers(uint16_t* values)
+int8_t Message::get_registers(uint16_t* values, uint16_t values_length)
 {
   uint8_t* rdata = register_data();
   if(!rdata)
       return ERR_FUNC_CODE;
-  const uint16_t quantity = get_quantity();
-  for(uint16_t i=0; i<quantity; ++i)
+  const uint16_t q = min(get_quantity(), values_length);
+  for(uint16_t i=0; i<q; ++i)
+      values[i] = demarshal_u16(rdata + 2*i);
+  return 0;
+}
+
+
+/** <values> array parameter MUST contain at least <quantity> uint16_t values. */
+int8_t Message::set_registers(uint16_t* values, uint16_t values_length)
+{
+  uint8_t* rdata = register_data();
+  if(!rdata)
+      return ERR_FUNC_CODE;
+  const uint16_t q = min(get_quantity(), values_length);
+  for(uint16_t i=0; i<q; ++i)
       marshal_u16(rdata + 2*i, values[i]);
   return 0;
 }
@@ -474,6 +518,25 @@ int8_t Message::verify_unsupported()
 }
 
 
+bool Message::_bufsize_ok(uint8_t min_bufsize)
+{
+  if(bufsize >= min_bufsize)
+      return true;
+
+  if(own_buf)
+  {
+    // Extend the buffer to fit the message size.
+    uint8_t* new_buf = (uint8_t*)realloc(buf, min_bufsize);
+    if(new_buf)
+    {
+      buf = new_buf;
+      return true;
+    }
+  }
+  return false;
+}
+
+
 /** Create a common message header, with a function code, and 2-byte key/value pair. */
 void Message::_hdr(uint8_t slave_id, uint8_t function_code, uint16_t key, uint16_t value)
 {
@@ -488,7 +551,7 @@ void Message::_hdr(uint8_t slave_id, uint8_t function_code, uint16_t key, uint16
 /** Create a common message type, with only a function code. */
 int8_t Message::_pdu1(uint8_t slave_id, uint8_t function_code, uint8_t min_response_bufsize)
 {
-  if(!buf || bufsize<min_response_bufsize)
+  if(!_bufsize_ok(min_response_bufsize))
       return ERR_PDU;
   type = MSG_REQUEST;
   set_slave(slave_id);
@@ -501,7 +564,7 @@ int8_t Message::_pdu1(uint8_t slave_id, uint8_t function_code, uint8_t min_respo
 /** Create a common message type, with a function code, and 2-byte key/value pair. */
 int8_t Message::_pdu5(uint8_t slave_id, uint8_t function_code, uint16_t key, uint16_t value, uint8_t min_response_bufsize)
 {
-  if(!buf || bufsize<6 || bufsize<min_response_bufsize)
+  if(!_bufsize_ok(max(6, min_response_bufsize)))
       return ERR_PDU;
   _hdr(slave_id, function_code, key, value);
   length = 6;

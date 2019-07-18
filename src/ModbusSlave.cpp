@@ -206,7 +206,7 @@ int8_t Slave::buildException( uint8_t u8exception, uint8_t* buf )
 
     buf[ FUNC ] += 0x80;
     buf[ 2 ]     = u8exception;
-    return EXCEPTION_SIZE;
+    return 3;
 }
 
 

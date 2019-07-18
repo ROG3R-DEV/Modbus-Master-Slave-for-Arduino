@@ -49,6 +49,25 @@ namespace modbus {
 
 
 /**
+ * @struct modbus_t
+ * @brief
+ * Master query structure:
+ * This includes all the necessary fields to make the Master generate a Modbus query.
+ * A Master may keep several of these structures and send them cyclically or
+ * use them according to program needs.
+ */
+typedef struct
+{
+    uint8_t u8id;          /*!< Slave address between 1 and 247. 0 means broadcast */
+    uint8_t u8fct;         /*!< Function code: 1, 2, 3, 4, 5, 6, 15 or 16 */
+    uint16_t u16RegAdd;    /*!< Address of the first register to access at slave/s */
+    uint16_t u16CoilsNo;   /*!< Number of coils or registers to access */
+    uint16_t *au16reg;     /*!< Pointer to memory image in master */
+}
+modbus_t;
+
+
+/**
  * @class Modbus
  * @brief Backwards-compatibility shim for Master and Slave classes.
  */

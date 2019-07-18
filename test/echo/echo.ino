@@ -26,8 +26,7 @@ uint16_t pass_count =0;
 
 const uint16_t master_data_count = 16;
 uint16_t master_data[master_data_count+1];
-uint8_t msgbuf[MAX_BUFFER];
-Message msg(msgbuf, MAX_BUFFER);
+Message msg;
 int8_t master_poll_result;
 
 Loopback master_stream(MAX_BUFFER+1);
@@ -422,7 +421,7 @@ void test_multiple_registers()
 
       fill_array_with_test_data(master_data, num);
       msg.fc_write_multiple_registers(1, reg_addr, num);
-      msg.set_registers(master_data);
+      msg.set_registers(master_data, master_data_count);
       const uint16_t crc0 = modbus::Base::calcCRC(master_data, num*2);
 
       master.send_request(msg);
@@ -477,7 +476,7 @@ void test_multiple_coils()
       const uint8_t num_bytes = bitset_size(num);
       fill_array_with_test_data(master_data, num_bytes);
       msg.fc_write_multiple_coils(1, reg_addr, num);
-      msg.set_bits(reinterpret_cast<uint8_t*>(master_data));
+      msg.set_bits(reinterpret_cast<uint8_t*>(master_data), master_data_count*16);
 
 #if defined(VERBOSE_RESULTS) && (VERBOSE_RESULTS>=3)
       Serial.write((uint8_t*)(master_data), num_bytes);

@@ -20,8 +20,7 @@
 uint16_t au16data[16];
 
 /**
- *  Modbus object declaration
- *  u8id : node id = 0 for master, = 1..247 for slave
+ *  modbus::Master object declaration
  *  port : serial port
  *  u8txenpin : 0 for RS-232 and USB-FTDI 
  *               or any pin number > 1 for RS-485
@@ -31,7 +30,7 @@ Master master(Serial,0); // this is master and RS-232 or USB-FTDI
 /**
  * This is a struct which contains a query to a slave device
  */
-modbus_t telegram;
+Message telegram;
 
 uint8_t u8state;
 unsigned long u32time;
@@ -57,14 +56,11 @@ void loop() {
     }
     break;
 
-  case 1: 
-    telegram.u8id = 1; // slave address
-    telegram.u8fct = MB_FC_READ_REGISTERS; // function code 3
-    telegram.u16RegAdd = 40000; // start address in slave
-    telegram.u16CoilsNo = 4; // number of elements (coils or registers) to read
-    telegram.au16reg = au16data; // pointer to a memory array in the Arduino
+  case 1:
+    // Create request to slave id=1, for register start addr=40000, quantity=4
+    telegram.fc_read_holding_registers(1, 40000, 4);
 
-    retval = master.query( telegram ); // send query (only once)
+    retval = master.send_request(telegram); // send request (only once)
     if (retval < 0) {
         // Error
         // (See advanced examples for code that blinks the builtin LED
@@ -79,7 +75,7 @@ void loop() {
     break;
 
   case 2:
-    retval = master.poll();
+    retval = master.poll(telegram);
     if (retval < 0) {
         // Error
         // (See advanced examples for code that blinks the builtin LED
@@ -91,6 +87,7 @@ void loop() {
     }
     else if (master.getState() == COM_IDLE) {
         // Do something with the data...
+        telegram.get_registers(au16data, sizeof(au16data)/sizeof(*au16data));
 
         // Reset
         u8state = 0;
