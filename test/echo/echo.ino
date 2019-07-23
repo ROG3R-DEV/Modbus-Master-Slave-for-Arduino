@@ -510,6 +510,34 @@ void test_multiple_coils()
 }
 
 
+/** Test function code 23. */
+void test_write_read()
+{
+  fill_array_with_test_data(master_data, master_data_count);
+  fill_array_with_test_data(slave_data, slave_data_count);
+  msg.fc_write_read_multiple_registers(1, 2,slave_data_count-2, 0,4);
+  msg.set_registers(master_data, master_data_count);
+  
+  master.send_request(msg);
+  while(master.getState()==COM_WAITING)
+  {
+    poll();
+  }
+
+  // Make the same changes to master_data...
+  memmove(master_data+2, master_data, 2*(slave_data_count-2));
+
+  // Check that the slave data has been set correctly.
+  for(size_t i=0; i<slave_data_count-2; ++i)
+      test_equal("test_write_read, slave reg ", i, slave_data[i], master_data[i]);
+
+  // Check that the returned data is correct.
+  test_equal("test_write_read, return quantity ", -1, msg.get_quantity(), 4);
+  for(size_t i=0; i<4; ++i)
+      test_equal("test_write_read, return val ", i, msg.get_register(i), master_data[i]);
+}
+
+
 /** Test the MODBUS CRC calculation, by comparing the output of calcCRC() with
  *  a few examples from the MODBUS spec document. */
 void test_crc()
@@ -582,6 +610,8 @@ void loop()
 
   test_multiple_registers();
   test_multiple_coils();
+
+  test_write_read();
 
   test_equal("master error count", 0, master.getCounter(CNT_MASTER_EXCEPTION), 3);
 

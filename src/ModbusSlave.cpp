@@ -560,8 +560,8 @@ int8_t Slave::process_FC23( Mapping& mapping, uint8_t* buf, uint8_t& count, uint
     // Despite the name, we must perform the write operation *before* the
     // read operation.
     return mapping.write_read_multiple_registers(
-        buf + 3,  write_addr, write_quantity,
-        buf + 11, read_addr,  read_quantity
+        buf + 11, write_addr, write_quantity,
+        buf + 3,  read_addr,  read_quantity
       );
 }
 
