@@ -66,6 +66,20 @@ uint8_t Slave::getID() const
 
 
 /**
+ * @brief Calculate the current value of the COMM_EVENT_COUNTER, which counts
+ *      all successful requests, except calls to GET_COMM_EVENT_COUNTER (FC11).
+ *
+ * @return counter value
+ * @ingroup loop
+ */
+uint16_t Slave::getCommEventCounter() const
+{
+  return u16Counter[CNT_SLAVE_MESSAGE] - u16Counter[CNT_SLAVE_EXCEPTION]
+        - u16Counter[CNT_SLAVE_NO_RESPONSE] - u16Counter[CNT_CALLS_TO_FC11];
+}
+
+
+/**
  * @brief Backward compatibility wrapper for Slave::poll()
  * Constructs a basic MODBUS mapping on the fly from an array of uint16_t.
  *
@@ -446,11 +460,7 @@ int8_t Slave::process_FC11( Mapping& mapping, uint8_t* buf, uint8_t& count )
     // Counts calls to this function, so they can be excluded from the result.
     ++u16Counter[CNT_CALLS_TO_FC11];
 
-    const uint16_t comm_event_count =
-        u16Counter[CNT_SLAVE_MESSAGE] - u16Counter[CNT_SLAVE_EXCEPTION]
-        - u16Counter[CNT_SLAVE_NO_RESPONSE] - u16Counter[CNT_CALLS_TO_FC11];
-
-    marshal_u16(buf + 4, comm_event_count);
+    marshal_u16(buf + 4, getCommEventCounter());
     return 0;
 }
 

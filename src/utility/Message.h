@@ -73,7 +73,7 @@ struct Message
   int8_t   set_bits(uint8_t* bitset, uint16_t bitset_length);
 
   int8_t   get_register(uint16_t regnum, uint16_t& value) const;
-  uint16_t get_register(uint16_t regnum) const;
+  uint16_t get_register(uint16_t regnum = 0) const;
   int8_t   set_register(uint16_t regnum, uint16_t value);
 
   int8_t   get_registers(uint16_t* values, uint16_t values_length);

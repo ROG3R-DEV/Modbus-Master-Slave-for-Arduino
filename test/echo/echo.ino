@@ -194,6 +194,27 @@ void poll()
 
 
 //
+// UTILITY: GET EVENT COUNTER
+
+uint16_t get_comm_event_counter()
+{
+  static uint16_t call_num = 0;
+
+  uint16_t current = slave.getCommEventCounter();
+  msg.fc_get_comm_event_counter(1);
+  master.send_request(msg);
+  while(master.getState()==COM_WAITING)
+  {
+    poll();
+  }
+  uint16_t result = msg.get_register(1);
+  // Value should not have been changed by this call.
+  test_equal("get_comm_event_counter", ++call_num, result, current);
+  return result;
+}
+
+
+//
 // HOLDING REGISTERS
 
 uint16_t read_holding_register(uint16_t addr)
@@ -300,15 +321,22 @@ void test_oob_holding_register()
 
 void test_holding_registers()
 {
+  uint16_t comm_events = get_comm_event_counter();
   uint16_t errcnt0 = master.getCounter(CNT_MASTER_EXCEPTION);
   for(uint16_t reg_addr=0; reg_addr<slave_data_count; ++reg_addr)
   {
     test_holding_register(reg_addr);
+    comm_events += 3; // test_holding_register generates 3 comm events
   }
   test_equal("test_holding_registers, errcnt", 0, master.getCounter(CNT_MASTER_EXCEPTION), errcnt0);
 
   // Test for correct handling of an out-of-bounds register.
+  // This test generates only exceptions, so comm event counter should not change.
   test_oob_holding_register();
+
+  // Check that the COMM EVENT COUNTER has counted correctly.
+  uint16_t comm_events_now = get_comm_event_counter();
+  test_equal("test_holding_registers, comm events", 0, comm_events_now, comm_events);
 }
 
 

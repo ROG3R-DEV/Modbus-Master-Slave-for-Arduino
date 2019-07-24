@@ -74,9 +74,10 @@ private:
 public:
     Slave(uint8_t u8id, Stream& port, uint8_t u8txenpin =0);
 
-    void setID( uint8_t u8id ); //!<write new ID for the slave
-    uint8_t getID() const; //!<get slave ID between 1 and 247
-    bool isListenOnly() const { return listenOnlyMode; }
+    void     setID( uint8_t u8id ); //!<write new ID for the slave
+    uint8_t  getID() const; //!<get slave ID between 1 and 247
+    bool     isListenOnly() const { return listenOnlyMode; }
+    uint16_t getCommEventCounter() const;
 
     int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
     int8_t poll( Mapping& mapping );               //!<cyclic poll for slave
