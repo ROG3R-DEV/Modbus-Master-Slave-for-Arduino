@@ -243,7 +243,7 @@ int8_t Slave::process_FC1( Mapping& mapping, uint8_t* buf, uint8_t& count, uint8
     const uint16_t quantity = demarshal_u16( buf + NB_HI );
 
     // Set the message size.
-    buf[ 2 ] = (quantity+7)/8;
+    buf[ 2 ] = bitset_size(quantity);
     count = buf[ 2 ] + 3;
 
     // Validate the requested quantity.
@@ -484,7 +484,7 @@ int8_t Slave::process_FC15( Mapping& mapping, uint8_t* buf, uint8_t& count )
     const uint8_t  n        = buf[ 6 ];
 
     // Validate the quantity.
-    if(0 == quantity || quantity > 0x7B0 || n != (quantity+7)/8)
+    if(0 == quantity || quantity > 0x7B0 || n != bitset_size(quantity))
         return EXC_ILLEGAL_DATA_VALUE;
 
     if (count != n + 7)
