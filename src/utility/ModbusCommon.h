@@ -205,7 +205,7 @@ inline uint8_t bitset_size(const uint16_t quantity)
 
 
 #if !defined(MAX_BUFFER)
-#define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
+#define  MAX_BUFFER  64	///!< maximum size for the communication buffer in bytes
 #endif
 
 

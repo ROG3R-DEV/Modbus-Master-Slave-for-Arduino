@@ -61,7 +61,7 @@ public:
     {
       // Only perform the cast if the object fits into the buffer.
       if(have_address(addr) * sizeof(uint16_t) >= sizeof(T))
-          return static_cast<T*>(data_words + (addr - start_address));
+          return reinterpret_cast<T*>(data_words + (addr - start_address));
       else
           return NULL;
     }
